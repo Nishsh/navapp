@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 显示 Xcode 版本
         run: xcodebuild -version
@@ -24,7 +24,7 @@ jobs:
           ./build_ipa.sh
 
       - name: 上传 IPA 产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: NavApp-unsigned-ipa
           path: build/NavApp-unsigned.ipa

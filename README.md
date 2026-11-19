@@ -82,6 +82,24 @@ python (probe 仓库里的) tools\push_via_api.py   # 把 --repo 改成新仓库
 | 全能签提示签名冲突 | 用 `build_ipa.sh` 新产出的 IPA（本工程产出即为无签名包） |
 | App 打开白屏 | 极少见：web/index.html 未随包编译，重跑 `build_ipa.sh`（脚本已内置校验） |
 
+## 打开就闪退怎么查
+
+**先抓崩溃日志**（30 秒，比猜快得多）：
+
+设置 → 隐私与安全性 → 分析与改进 → 分析数据 → 在列表里找 `NavApp-2026-11-19-xxxxxx.ips`
+（列表按时间倒序，装完 App 点开就崩的那条在最上面）→ 点开 → 把最开头一段
+（`incident`、`exception`、`termination` 那几行）截图或复制发我。
+
+按日志里的关键字对症：
+
+| 日志关键字 | 含义 | 处理 |
+|---|---|---|
+| `NSUnknownKeyException` / `not key value coding-compliant` | 代码用了私有 KVC 属性 | 已在本版移除（`WebView.swift` 里的 `allowFileAccessFromFileURLs`） |
+| `dyld: Library not loaded` / `code signature invalid` | 签名环节坏了 | 换证书重签；确认用的是 `build_ipa.sh` 产出的**未签名**包 |
+| `terminated due to uncaught exception` + `scene` | 场景清单缺失 | 已补 `UIApplicationSceneManifest` |
+| 装完点图标完全没反应、无日志 | 描述文件不含这台设备的 UDID | 全能签里「添加 UDID」后重签 |
+| 启动后白屏不闪退 | `web/index.html` 没进包 | 重跑 `build_ipa.sh`（脚本有校验，缺文件会直接报错） |
+
 ## 想改页面？
 
 直接改 `NavApp/web/index.html`，重新构建即可——页面就是一个普通网页，

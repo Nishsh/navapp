@@ -16,9 +16,13 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
-        // 允许 file:// 页面发起 https 子资源请求（高德 JS API 从 CDN 加载）
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        config.preferences.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+        /* 【重要】这里曾经用 KVC 写 private key：
+         *   config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+         * WKPreferences 并没有公开这两个属性，靠 KVC 落到私有 ivar 上才能生效。
+         * 一旦系统版本变化（该 ivar 被移除/改名），KVC 会抛 NSUnknownKeyException，
+         * 而这是 ObjC 异常，Swift 的 do/catch 拦不住 —— 表现为「点开图标立刻闪退」。
+         * 页面只从 https CDN 拉一个 script，本地读取由 loadFileURL(_:allowingReadAccessTo:)
+         * 授权，不需要这两个私有开关，因此彻底移除。 */
         config.userContentController.add(context.coordinator, name: "geo")
         config.userContentController.addUserScript(
             WKUserScript(source: Self.bridgeShim,
@@ -40,8 +44,12 @@ struct WebView: UIViewRepresentable {
 
         bridge.attach(webView)
 
-        if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web") {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        // 优先取 App.app/web/index.html（工程里 web 是 folder reference）；
+        // 万一被当成普通文件组打进根目录，第二行兜底，避免白屏
+        let htmlURL = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web")
+            ?? Bundle.main.url(forResource: "index", withExtension: "html")
+        if let htmlURL = htmlURL {
+            webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
         } else {
             webView.loadHTMLString("<h1 style='font-family:-apple-system;padding:24px'>web/index.html 未打包进 App</h1>",
                                    baseURL: nil)

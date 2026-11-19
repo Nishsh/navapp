@@ -22,6 +22,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>用于显示你的实时位置、规划路线并提供第一人称转向导航。位置数据只在本机使用，不会上传。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
