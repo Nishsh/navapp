@@ -1,0 +1,31 @@
+name: build-unsigned-ipa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    # macOS 14 镜像已退役，使用 macos-15（arm64）
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 显示 Xcode 版本
+        run: xcodebuild -version
+
+      - name: 编译并打包未签名 IPA
+        run: |
+          chmod +x ./build_ipa.sh
+          ./build_ipa.sh
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavApp-unsigned-ipa
+          path: build/NavApp-unsigned.ipa
+          if-no-files-found: error

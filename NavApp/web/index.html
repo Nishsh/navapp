@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>我的私人导航 - 第一人称实景导航</title>
+  <style>
+    /* ================= 基础与主题变量 ================= */
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --primary: #4f46e5; --primary-dark: #4338ca;
+      --success: #10b981; --danger: #ef4444;
+      --glass-bg: rgba(255,255,255,0.85); --glass-border: rgba(255,255,255,0.6);
+      --shadow: 0 8px 32px rgba(15,23,42,0.12); --radius: 16px;
+    }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; background: #e8eaf0; }
+    #map { position: absolute; inset: 0; z-index: 0; }
+    
+    .amap-suggestion-list, .amap-lib-autocomplete, .amap-suggestion { display: none !important; }
+
+    /* ================= 顶部搜索面板 ================= */
+    .search-panel { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); width: calc(100% - 32px); max-width: 560px; z-index: 100; display: flex; flex-direction: column; gap: 10px; transition: opacity .25s, transform .25s; }
+    .search-panel.dimmed { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(-20px); }
+    .search-card { background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+    .input-row { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.7); border-radius: 12px; padding: 0 8px 0 12px; border: 1px solid transparent; transition: border-color .2s, box-shadow .2s; position: relative; }
+    .input-row:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
+    .input-row .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .dot-start { background: var(--success); } .dot-end { background: var(--danger); }
+    .input-row input { flex: 1; border: none; background: transparent; padding: 12px 0; font-size: 15px; color: #1f2937; outline: none; min-width: 0; }
+    .input-row input::placeholder { color: #9ca3af; }
+    .row-btn { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; border: none; background: rgba(0,0,0,0.05); color: #4b5563; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all .15s; }
+    .row-btn:hover { background: rgba(79,70,229,0.12); color: var(--primary); }
+
+    .action-row { display: flex; gap: 10px; }
+    .btn { flex: 1; border: none; border-radius: 12px; padding: 12px 16px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform .15s, background .2s, box-shadow .2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 4px 14px rgba(79,70,229,0.35); }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:disabled { background: #a5b4fc; box-shadow: none; cursor: not-allowed; }
+    .btn-ghost { background: rgba(255,255,255,0.9); color: #374151; border: 1px solid rgba(0,0,0,0.06); }
+    .btn-ghost:hover { background: #fff; }
+
+    /* ================= 悬浮控制按钮 ================= */
+    .fab-group { position: absolute; right: 16px; bottom: 32px; z-index: 100; display: flex; flex-direction: column; gap: 12px; align-items: flex-end; transition: opacity .25s; }
+    .fab-group.dimmed { opacity: 0; pointer-events: none; }
+    .fab { width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 22px; background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--glass-border); box-shadow: var(--shadow); transition: transform .15s, background .2s; color: #374151; }
+    .fab:hover { background: #fff; } .fab:active { transform: scale(0.92); }
+    .fab.primary { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 6px 20px rgba(79,70,229,0.4); }
+    .fab.primary:hover { background: var(--primary-dark); }
+    .fab.danger { background: var(--danger); color: #fff; border-color: var(--danger); box-shadow: 0 6px 20px rgba(239,68,68,0.4); }
+    /* 3D 楼块开关的选中态 */
+    .fab.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 6px 20px rgba(79,70,229,0.4); }
+    .fab.pulse { animation: pulse-ring 2s infinite; }
+    @keyframes pulse-ring { 0%{box-shadow:0 0 0 0 rgba(79,70,229,.5)} 70%{box-shadow:0 0 0 14px rgba(79,70,229,0)} 100%{box-shadow:0 0 0 0 rgba(79,70,229,0)} }
+
+    /* ================= 底部路线详情 ================= */
+    .route-panel { position: absolute; left: 16px; right: 16px; bottom: 16px; max-width: 560px; margin: 0 auto; max-height: 34vh; background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 90; overflow: hidden; display: flex; flex-direction: column; transition: transform .3s ease, opacity .3s ease; }
+    .route-panel.hidden { transform: translateY(calc(100% + 20px)); opacity: 0; pointer-events: none; }
+    .route-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); flex-shrink: 0; }
+    .route-panel-header .title { font-size: 15px; font-weight: 600; color: #1f2937; }
+    .close-btn { width: 28px; height: 28px; border-radius: 50%; border: none; background: rgba(0,0,0,0.05); color: #6b7280; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+    .close-btn:hover { background: rgba(0,0,0,0.1); }
+    .route-tabs { display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    .route-tabs::-webkit-scrollbar { display: none; }
+    .route-tab { flex-shrink: 0; padding: 8px 14px; border-radius: 12px; font-size: 13px; background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.06); cursor: pointer; transition: all .2s; min-width: 100px; }
+    .route-tab:hover { background: #fff; }
+    .route-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 4px 12px rgba(79,70,229,0.3); }
+    .route-tab .tab-main { font-weight: 600; font-size: 13px; }
+    .route-tab .tab-sub { font-size: 11px; opacity: .8; margin-top: 2px; }
+    .route-tab.active .tab-sub { opacity: .9; }
+    #panel { overflow-y: auto; padding: 12px 16px; font-size: 14px; line-height: 1.6; color: #333; flex: 1; }
+    .route-step { padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; gap: 10px; }
+    .route-step .index { color: var(--primary); font-weight: 600; font-size: 13px; flex-shrink: 0; }
+    .route-step .desc { font-size: 14px; color: #1f2937; }
+    .route-step .dist { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+
+    /* ================= 导航控制栏 ================= */
+    .nav-bar { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid rgba(0,0,0,0.06); flex-shrink: 0; background: rgba(255,255,255,0.5); }
+    .nav-bar .btn { padding: 10px; font-size: 14px; }
+    
+    /* ================= 提示框与十字准星 ================= */
+    .loc-toast { position: absolute; top: 16px; left: 50%; transform: translateX(-50%) translateY(-80px); z-index: 200; background: rgba(17,24,39,0.9); color: #fff; padding: 10px 18px; border-radius: 24px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .3s; opacity: 0; pointer-events: none; display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); }
+    .loc-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .loc-toast .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 120; pointer-events: none; opacity: 0; transition: opacity .2s; width: 40px; height: 40px; }
+    .crosshair.show { opacity: 1; }
+    .crosshair::before, .crosshair::after { content: ''; position: absolute; background: var(--primary); border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    .crosshair::before { width: 2px; height: 100%; left: 50%; top: 0; transform: translateX(-50%); }
+    .crosshair::after { height: 2px; width: 100%; top: 50%; left: 0; transform: translateY(-50%); }
+    .crosshair .dot-center { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 2px 8px rgba(79,70,229,0.5); }
+
+    .pick-card { position: absolute; left: 16px; right: 16px; bottom: 16px; max-width: 560px; margin: 0 auto; background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 150; padding: 16px; display: flex; flex-direction: column; gap: 14px; transform: translateY(calc(100% + 20px)); opacity: 0; transition: transform .3s cubic-bezier(.34,1.2,.64,1), opacity .25s; pointer-events: none; }
+    .pick-card.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+    .pick-card .pick-label { font-size: 12px; color: #6b7280; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .pick-card .pick-label .tag { background: var(--primary); color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .pick-card .pick-address { font-size: 16px; font-weight: 600; color: #1f2937; line-height: 1.4; min-height: 22px; display: flex; align-items: center; gap: 8px; }
+    .pick-card .pick-address .loading-dot { width: 14px; height: 14px; border: 2px solid rgba(79,70,229,0.3); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+    .pick-card .pick-actions { display: flex; gap: 10px; }
+    .pick-card .pick-actions .btn { padding: 11px 16px; }
+
+    /* ================= 自定义联想下拉框 ================= */
+    .custom-suggestion-panel { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); z-index: 9999; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid rgba(0,0,0,0.05); }
+    .custom-suggestion-panel::-webkit-scrollbar { width: 6px; }
+    .custom-suggestion-panel::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .custom-suggestion-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background 0.2s; }
+    .custom-suggestion-item:last-child { border-bottom: none; }
+    .custom-suggestion-item:hover { background: #f8fafc; }
+    .suggestion-title { font-size: 14px; color: #1f2937; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .suggestion-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .suggestion-distance { font-size: 12px; color: var(--primary); font-weight: 600; background: rgba(79,70,229,0.08); padding: 2px 8px; border-radius: 10px; white-space: nowrap; margin-left: 12px; }
+
+    .amap-logo, .amap-copyright { opacity: .6; }
+    @media (max-width: 480px) {
+      .search-panel { top: 12px; width: calc(100% - 24px); }
+      .search-card { padding: 10px; gap: 8px; }
+      .action-row .btn { padding: 11px 12px; font-size: 14px; }
+      .fab-group { right: 12px; bottom: 24px; } .fab { width: 48px; height: 48px; font-size: 20px; }
+      .route-panel { left: 12px; right: 12px; bottom: 12px; max-height: 40vh; }
+      .pick-card { left: 12px; right: 12px; bottom: 12px; padding: 14px; }
+      .pick-card .pick-address { font-size: 15px; }
+    }
+
+    /* ================= iOS 安全区适配（iOS 壳内运行时生效） =================
+     * WKWebView 全屏铺满，需要给刘海屏和底部 Home 指示条留出空间，
+     * 否则顶部搜索框会被状态栏压住、底部面板会压到小白条上。
+     * 用 env() 读取安全区，非 iOS 环境下取 0px，等效于原布局。 */
+    .search-panel { top: calc(16px + env(safe-area-inset-top, 0px)) !important; }
+    .loc-toast { top: calc(16px + env(safe-area-inset-top, 0px)) !important; }
+    .fab-group { bottom: calc(32px + env(safe-area-inset-bottom, 0px)) !important; }
+    .route-panel { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
+    .pick-card { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="crosshair" id="crosshair"><div class="dot-center"></div></div>
+
+  <!-- 顶部搜索区 -->
+  <div class="search-panel" id="searchPanel">
+    <div class="search-card">
+      <div class="input-row" id="row-start">
+        <span class="dot dot-start"></span>
+        <input id="startInput" placeholder="起点，例如：广州塔" autocomplete="off" />
+        <button class="row-btn" id="startLocBtn" title="使用当前位置">📍</button>
+        <button class="row-btn" id="startPickBtn" title="在地图上选点">🗺️</button>
+      </div>
+      <div class="input-row" id="row-end">
+        <span class="dot dot-end"></span>
+        <input id="endInput" placeholder="终点，例如：白云机场" autocomplete="off" />
+        <button class="row-btn" id="endPickBtn" title="在地图上选点">🗺️</button>
+      </div>
+      <div class="action-row">
+        <button class="btn btn-primary" id="routeBtn">🚗 规划路线</button>
+        <button class="btn btn-ghost" id="swapBtn">⇅ 交换</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 地图选点确认卡片 -->
+  <div class="pick-card" id="pickCard">
+    <div class="pick-label"><span class="tag" id="pickTag">起点</span> 拖动地图，将准星对准目标位置</div>
+    <div class="pick-address" id="pickAddress">正在获取地址...</div>
+    <div class="pick-actions">
+      <button class="btn btn-ghost" id="cancelPickBtn">取消</button>
+      <button class="btn btn-primary" id="confirmPickBtn">就选这里</button>
+    </div>
+  </div>
+
+  <div class="loc-toast" id="locToast"></div>
+
+  <!-- 右侧悬浮按钮 -->
+  <div class="fab-group" id="fabGroup">
+    <button class="fab" id="toggle3DBtn" title="切换 3D 楼块视图">🏢</button>
+    <button class="fab" id="resetViewBtn" title="回到全览">🗺️</button>
+    <button class="fab primary" id="locateBtn" title="显示我的位置">📍</button>
+    <button class="fab danger" id="stopLocateBtn" title="停止定位" style="display:none;">■</button>
+  </div>
+
+  <!-- 导航中：用户手动拖图后用于一键回到车头向上视角 -->
+  <div class="fab-group" id="navFabGroup" style="display:none;">
+    <button class="fab primary pulse" id="navRecenterBtn" title="回到导航视角">🧭</button>
+  </div>
+
+  <!-- 底部路线详情 -->
+  <div class="route-panel hidden" id="routePanel">
+    <div class="route-panel-header">
+      <span class="title">路线详情</span>
+      <button class="close-btn" id="closePanelBtn">✕</button>
+    </div>
+    <div class="route-tabs" id="routeTabs"></div>
+    <div id="panel"><div class="tip" style="color:#6b7280;font-size:13px;">选择起点终点后自动规划。</div></div>
+    
+    <!-- 导航控制栏 -->
+    <div class="nav-bar" id="navBar">
+      <button class="btn btn-primary" id="startNavBtn">🚀 开始导航</button>
+      <button class="btn btn-ghost" id="stopNavBtn" style="display:none; background:#ef4444; color:#fff; border:none;">🛑 停止导航</button>
+    </div>
+  </div>
+
+  <script>
+    /*
+     * ⚠️ 安全提示（上线前必改）：
+     * securityJsCode 明文写在前端，任何人查看源码都能抓走，进而盗刷你的 key 配额。
+     * 生产环境请改用高德官方推荐的「代理服务器」方式：
+     *   window._AMapSecurityConfig = { serviceHost: 'https://你的域名/_AMapService' };
+     * 由后端在转发时注入 jscode，前端不再出现明文密钥；同时给 key 绑定域名白名单。
+     * 下面这行仅保留用于本地调试。
+     */
+    window._AMapSecurityConfig = { securityJsCode: 'b5a4f775d6b78fb6c8134e5caaab6bf4' };
+
+    /*
+     * 浏览器定位只在「安全上下文」(HTTPS / localhost) 下可用。
+     * 直接双击 index.html 以 file:// 打开时，getCurrentPosition 会立即返回 PERMISSION_DENIED，
+     * 且不会弹出授权框 —— 极易被误判成代码 bug。这里在启动时给出明确提示。
+     */
+    if (!window.isSecureContext) {
+      console.warn('[导航] 当前非安全上下文(' + location.protocol + ')，浏览器定位不可用。' +
+                   '请起本地服务访问，例如：python3 -m http.server 8000 → http://localhost:8000');
+      window.addEventListener('DOMContentLoaded', function () {
+        var t = document.getElementById('locToast');
+        if (t) {
+          t.innerHTML = '⚠️ 当前以 file:// 打开，浏览器禁用定位，请改用本地 HTTP 服务访问';
+          t.classList.add('show');
+          setTimeout(function () { t.classList.remove('show'); }, 6000);
+        }
+      });
+    }
+  </script>
+  <!-- 【修复】移除未使用的 AMap.Geolocation 与 AMap.MoveAnimation 插件（全文无任何调用），减少首屏加载体积 -->
+  <script src="https://webapi.amap.com/maps?v=2.0&key=4c6e1345abf50c26250ddb0342d06c7e&plugin=AMap.Driving,AMap.AutoComplete,AMap.Geocoder,AMap.GeometryUtil"></script>
+  <script>
+    /* =====================================================================
+     * 修复版说明（相对原始 index.html 的改动清单）
+     * ---------------------------------------------------------------------
+     * A. 崩溃/失效类
+     *   1. locateBtn 定位失败后永久 disabled —— getPreciseLocation 增加 onError 回调
+     *   2. geocoder 异步未就绪即被调用导致 TypeError —— 统一 withGeocoder() 排队
+     *   3. stopLocateBtn 从不显示（死代码）—— 接入真实「持续跟随」开关
+     *   4. 删除未使用的 drivingBase / AMap.Geolocation 实例，并按策略缓存 Driving 实例
+     *   5. Driving.search 无超时保护 —— 加 12s 超时，防止 planning 锁永久卡住
+     * B. 并发与数据正确性
+     *   6. planRoute 异步竞态（旧结果覆盖新结果）—— planSeq 序号 + 并发锁 + 待办补跑
+     *   7. routeBtn 可连点打爆 QPS —— 规划期间禁用按钮
+     *   8. 关键字直接丢给 Driving 解析成功率低 —— 先 AutoComplete/Geocoder 转坐标，
+     *      并把「地点解析失败」与「路线规划失败」分开提示
+     *   9. convertFrom 失败时用未纠偏 WGS-84 坐标（国内偏 100~700m）—— 改为直接报错
+     *  10. 导航中瞬时 GPS 超时立刻退出 —— code=3 容忍 3 次，权限类错误才退出
+     *  11. renderRoutes 未过滤 steps 缺失的脏数据 —— flatMap 会抛错中断渲染
+     *  12. 持续定位每次回调都 setZoom(16) 抢视野 —— 仅首次设定层级
+     *  13. 退出导航/退出选点后路线面板不恢复 —— 按是否有路线决定恢复
+     * C. 性能
+     *  14. 导航小车每个 GPS 点都 setContent 重建 DOM —— 缓存节点只改 transform
+     *  15. 移除未加载使用的 AMap.Geolocation / AMap.MoveAnimation 插件
+     *  16. pagehide 时释放 watchPosition
+     * ★ 本轮新增（针对"导航后转向背面"与"3D 楼块"）
+     *  20. 【根因】map.setRotation(heading) 方向反了 —— 高德官方定义 rotation 为
+     *      「地图顺时针旋转角度」，车头向上必须逆时针转 heading，即 setRotation(360-heading)。
+     *      原写法下车头朝东(90°)时前进方向被转到屏幕正下方(180°)，即"转到背面去"。
+     *      已数值验证 0/45/90/180/270/359 六个朝向，前进方向均落在屏幕正上方。
+     *  21. 【根因】静止时 GPS coords.heading 为 null，代码退化成 currentHeading=0（强制正北），
+     *      所以"不朝我面朝的方向"。新增罗盘模块：iOS webkitCompassHeading /
+     *      Android deviceorientationabsolute，并按 W3C 旋转矩阵推导方位角，
+     *      |β|<70° 用屏幕顶边投影(-α)，接近竖直用屏幕法线反向(-(α+γ))，
+     *      规避官方示例 atan(Vx/Vy) 在竖直握持时除零得 NaN 的缺陷。
+     *      iOS 13+ 的罗盘权限在按钮手势同步栈内申请且只申请一次（递归调用会落到异步栈被拒）。
+     *  22. Android 上 absolute 与非 absolute 事件同时派发，后者 α 仅相对开机朝向，
+     *      会导致朝向乱偏 —— 收到 absolute 后永久屏蔽非 absolute。
+     *  23. GPS 与罗盘融合：速度 >1.5m/s 用 GPS heading（更准、抗车体磁干扰），
+     *      否则用罗盘；切换处用最短弧插值，避免跨 0° 时地图反向转一整圈。
+     *  24. 视角更新从「每来一个 GPS 点(约1Hz)转一次」改为 rAF 高频插值，
+     *      转头时地图平滑跟随而非一格一格跳；角度变化 <0.3° 或中心点未移动时跳过重绘。
+     *  25. 导航中用户手动拖图会被 setCenter/setRotation 抢方向盘 —— 手势后暂停跟随 5 秒，
+     *      并提供🧭「回到导航视角」按钮。
+     *  26. 退出导航时释放罗盘监听与 rAF，避免后台持续吃传感器与 CPU。
+     *
+     * E. 新需求：高德式 3D 楼块显示
+     *  27. Map 初始化补 showBuildingBlock / features 含 'building' / buildingAnimation /
+     *      rotateEnable / pitchEnable / zooms / skyColor，开启双指旋转与倾斜手势。
+     *  28. 新增 🏢 按钮：3D 楼块 ⇄ 2D 平面 一键切换（运行期用 setFeatures 增删 'building'）。
+     *  29. 楼块数据只在 zoom>=16 下发，故导航层级提到 17.5、俯仰角 60°；
+     *      浏览态按 zoom 跨越 16 级自动升降俯仰角，拉远自动压平、拉近自动抬起。
+     *  30. 「回到全览」同步回正旋转并按档位重设俯仰角。
+     *
+     * D. 安全
+     *  17. POI 名称/地址/导航指令/用户输入直插 innerHTML —— 统一 escapeHtml 转义
+     *  18. securityJsCode 明文暴露 —— 加醒目注释，给出代理方案（需后端配合，无法纯前端修）
+     *  19. file:// 打开时定位不可用 —— 启动即提示，避免误判为代码 bug
+     * ===================================================================== */
+
+    // ==========================================
+    // 1. 核心状态管理与常量
+    // ==========================================
+    const State = {
+      routes: [],          
+      activeIdx: 0,        
+      overlays: [],        
+      markers: [],         
+      currentPos: null,    
+      autoPlanTimer: null, 
+      isPicking: false,    
+      pickTarget: null,    
+      pickAddress: '',     
+      watchId: null,       
+      navMode: false,
+      // --- 修复新增 ---
+      planSeq: 0,          // 路线规划请求序号，用于丢弃过期结果，防止异步竞态
+      planning: false,     // 规划进行中标志，防止按钮连点打爆 QPS
+      trackWatchId: null,  // 持续跟踪定位的 watchId（与导航用的 watchId 分开）
+      navErrCount: 0,      // 导航中定位失败计数，容忍瞬时超时（隧道/室内）
+      planPending: false,  // 规划期间又收到新输入，待当前批次结束后补跑
+      navManualUntil: 0,   // 此时间戳前不自动抢视角（用户手动拖动/缩放地图后给 5 秒自由操作）
+      compassAsked: false, // iOS 罗盘权限只申请一次
+    };
+
+    const COLORS = { active: '#4f46e5', navActive: '#3b82f6', inactive: '#9ca3af' };
+    const STRATEGIES = [
+      { policy: AMap.DrivingPolicy.LEAST_TIME, label: '最快路线' },
+      { policy: AMap.DrivingPolicy.LEAST_DISTANCE, label: '最短距离' },
+      { policy: AMap.DrivingPolicy.LEAST_FEE, label: '少收费' },
+      { policy: AMap.DrivingPolicy.REAL_TRAFFIC, label: '躲避拥堵' }
+    ];
+
+    const DOM = {
+      startInput: document.getElementById('startInput'),
+      endInput: document.getElementById('endInput'),
+      routeBtn: document.getElementById('routeBtn'),
+      swapBtn: document.getElementById('swapBtn'),
+      routePanel: document.getElementById('routePanel'),
+      panel: document.getElementById('panel'),
+      routeTabs: document.getElementById('routeTabs'),
+      closePanelBtn: document.getElementById('closePanelBtn'),
+      locateBtn: document.getElementById('locateBtn'),
+      stopLocateBtn: document.getElementById('stopLocateBtn'),
+      resetViewBtn: document.getElementById('resetViewBtn'),
+      locToast: document.getElementById('locToast'),
+      startLocBtn: document.getElementById('startLocBtn'),
+      startPickBtn: document.getElementById('startPickBtn'),
+      endPickBtn: document.getElementById('endPickBtn'),
+      searchPanel: document.getElementById('searchPanel'),
+      fabGroup: document.getElementById('fabGroup'),
+      crosshair: document.getElementById('crosshair'),
+      pickCard: document.getElementById('pickCard'),
+      pickTag: document.getElementById('pickTag'),
+      pickAddress: document.getElementById('pickAddress'),
+      cancelPickBtn: document.getElementById('cancelPickBtn'),
+      confirmPickBtn: document.getElementById('confirmPickBtn'),
+      startNavBtn: document.getElementById('startNavBtn'),
+      stopNavBtn: document.getElementById('stopNavBtn'),
+      navBar: document.getElementById('navBar'),
+      toggle3DBtn: document.getElementById('toggle3DBtn'),
+      navFabGroup: document.getElementById('navFabGroup'),
+      navRecenterBtn: document.getElementById('navRecenterBtn')
+    };
+
+    // ==========================================
+    // 2. 初始化地图与核心服务
+    // ==========================================
+    const map = new AMap.Map('map', {
+      zoom: 12,
+      center: [113.264, 23.129],
+      mapStyle: 'amap://styles/whitesmoke',
+      viewMode: '3D',
+      pitch: 0,
+      rotation: 0,
+      /* ===== 【新增】高德式 3D 楼块显示 =====
+       * showBuildingBlock: true  —— 开启 3D 楼块（建筑物立体拉伸），这是"显示建筑层级"的总开关
+       * features 必须包含 'building' —— 否则楼块要素根本不渲染（默认值已含，这里显式声明防被覆盖）
+       * buildingAnimation: true —— 楼块从地面"长出来"的动画，观感更接近高德 App
+       * rotateEnable / pitchEnable —— 开启双指旋转与双指上下倾斜手势（移动端 3D 交互的前提）
+       * 注意：楼块通常在 zoom >= 16 时才出现，低层级看不到属于正常现象（见 applyViewMode） */
+      showBuildingBlock: true,
+      features: ['bg', 'road', 'building', 'point'],
+      buildingAnimation: true,
+      rotateEnable: true,
+      pitchEnable: true,
+      zooms: [3, 20],
+      skyColor: '#cfe8ff'
+    });
+
+    /* =====================================================================
+     * 【新增】3D 楼块视图管理
+     * ---------------------------------------------------------------------
+     * 高德 App 的"3D 显示 + 建筑层级"在 JS API 2.0 里由三个条件共同决定：
+     *   1) viewMode:'3D'（初始化时设置，运行期不可改）
+     *   2) showBuildingBlock:true 且 features 含 'building'
+     *   3) pitch > 0 且 zoom >= 16（楼块数据只在高层级下发，低层级看不到是正常的）
+     * 所以这里做一个「视图档位」管理：2D 平面 / 3D 楼块，
+     * 并在缩放跨越 16 级时自动升降俯仰角，观感与高德一致。
+     * ===================================================================== */
+    const VIEW = {
+      mode3D: true,        // 当前是否处于 3D 楼块模式
+      NAV_ZOOM: 17.5,      // 导航层级：>=16 才有楼块
+      NAV_PITCH: 60,       // 导航俯仰角：能看到建筑立面，又不至于视野过窄
+      BUILDING_MIN_ZOOM: 16,
+      BROWSE_PITCH: 50,    // 普通浏览时的俯仰角
+    };
+    const NAV_ZOOM = VIEW.NAV_ZOOM;
+    const NAV_PITCH = VIEW.NAV_PITCH;
+
+    function set3DMode(on, silent) {
+      VIEW.mode3D = !!on;
+      // 楼块要素开关
+      map.setFeatures(VIEW.mode3D
+        ? ['bg', 'road', 'building', 'point']
+        : ['bg', 'road', 'point']);
+      // showBuildingBlock 只能通过 setMapStyle/setStatus 之外的初始化项控制，
+      // 运行期用 features 增删 'building' 即可等效开关楼块渲染。
+      if (!State.navMode) {
+        const z = map.getZoom();
+        const shouldTilt = VIEW.mode3D && z >= VIEW.BUILDING_MIN_ZOOM;
+        map.setPitch(shouldTilt ? VIEW.BROWSE_PITCH : 0, false, 400);
+        if (!shouldTilt) map.setRotation(0, false, 400);
+      }
+      if (!silent) showToast(VIEW.mode3D ? '已开启 3D 楼块视图' : '已切换 2D 平面视图');
+      update3DBtn();
+    }
+
+    function update3DBtn() {
+      if (!DOM.toggle3DBtn) return;
+      DOM.toggle3DBtn.classList.toggle('active', VIEW.mode3D);
+      DOM.toggle3DBtn.title = VIEW.mode3D ? '切换到 2D 平面视图' : '切换到 3D 楼块视图';
+    }
+
+    /* 缩放跨越楼块阈值时自动调整俯仰角：
+     * 拉远（<16 级）自动压平，避免低层级下 3D 透视把图面拉得看不清；
+     * 拉近（>=16 级）自动抬起，露出建筑立面。 */
+    map.on('zoomend', () => {
+      if (State.navMode || !VIEW.mode3D) return;
+      const z = map.getZoom();
+      map.setPitch(z >= VIEW.BUILDING_MIN_ZOOM ? VIEW.BROWSE_PITCH : 0, false, 300);
+    });
+
+
+    // 【修复】原代码 new 了一个 drivingBase 却从未使用（死代码），
+    // 而每次规划又为 4 种策略各 new 一个 AMap.Driving，连点几次就撞上高德 Driving 服务 QPS 限流，
+    // 限流后回调是静默失败，用户只看到「未能规划出路线」。改为按策略缓存实例，全程复用。
+    const drivingCache = new Map();
+    function getDriving(policy) {
+      if (!drivingCache.has(policy)) {
+        drivingCache.set(policy, new AMap.Driving({ policy, map: null, panel: null, hideMarkers: true }));
+      }
+      return drivingCache.get(policy);
+    }
+
+    let geocoder = null;
+    const geocoderWaiters = [];
+    AMap.plugin('AMap.Geocoder', () => {
+      geocoder = new AMap.Geocoder({ city: '全国' });
+      geocoderWaiters.splice(0).forEach(fn => fn(geocoder));
+    });
+
+    /* 【修复】geocoder 是异步插件，页面刚加载完的一瞬间用户就可能点「地图选点确认」或
+     * 「使用当前位置」，此时 geocoder 仍为 null，直接调用会抛 TypeError 导致后续逻辑中断。
+     * 统一走 withGeocoder：未就绪则排队，就绪后立即执行。 */
+    function withGeocoder(fn) {
+      if (geocoder) { fn(geocoder); return; }
+      geocoderWaiters.push(fn);
+    }
+
+    // ==========================================
+    // 3. 通用工具函数
+    // ==========================================
+    function showToast(msg, isError = false, isLoading = false) {
+      DOM.locToast.innerHTML = (isLoading ? '<div class="spinner"></div>' : (isError ? '⚠️ ' : '✅ ')) + msg;
+      DOM.locToast.classList.add('show');
+      if (!isLoading) {
+        clearTimeout(showToast._timer);
+        showToast._timer = setTimeout(() => DOM.locToast.classList.remove('show'), 3000);
+      }
+    }
+
+    /* 【附加修复】POI 名称、地址、导航指令都来自外部数据（其中 POI 名称属于用户可提交内容），
+     * 原代码直接拼进 innerHTML，存在 HTML/脚本注入面。统一转义后再插入。 */
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function clearInputCoords(inputEl) {
+      inputEl.dataset.lng = '';
+      inputEl.dataset.lat = '';
+      inputEl.dataset.useLocation = '';
+    }
+
+    function hasValidCoord(inputEl) {
+      const lng = parseFloat(inputEl.dataset.lng);
+      const lat = parseFloat(inputEl.dataset.lat);
+      return (!isNaN(lng) && !isNaN(lat) && inputEl.dataset.useLocation === '1');
+    }
+
+    // 注：原 getSearchParam() 已移除 —— 它返回的 { keyword, city:'全国' } 交给 Driving.search
+    // 解析成功率很低，现统一由 resolveEndpoint()/resolveKeyword() 先把地名转成坐标。
+
+    // ==========================================
+    // 4. 路线规划核心逻辑
+    // ==========================================
+    function searchRoutePromise(drivingInstance, start, end) {
+      return new Promise((resolve) => {
+        /* 【修复】补超时保护：Driving.search 在弱网/限流时可能长时间不回调，
+         * 会让 planRoute 一直卡在 planning=true，「规划路线」按钮永久禁用。 */
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) { settled = true; resolve({ status: 'fail', error: 'timeout' }); }
+        }, 12000);
+
+        const callback = (status, result) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (status === 'complete' && result.routes?.length > 0) {
+            resolve({ status: 'success', route: result.routes[0] });
+          } else {
+            resolve({ status: 'fail', error: result?.info || status });
+          }
+        };
+        // start / end 现在恒为 [lng, lat] 坐标数组（由 resolveEndpoint 保证），
+        // 不再需要区分关键字分支
+        drivingInstance.search(start, end, callback);
+      });
+    }
+
+    /* 【修复】原代码直接把 { keyword, city:'全国' } 丢给 Driving.search，
+     * 「全国」范围的手输地名解析成功率很低，失败时面板只显示「未能规划出路线」，
+     * 用户无法区分是「两地之间确实不通」还是「地名没解析出来」。
+     * 这里先用 AutoComplete / Geocoder 把关键字确定性地转成坐标，再规划，
+     * 并把「解析失败」和「规划失败」区分提示。 */
+    function resolveKeyword(keyword) {
+      return new Promise((resolve) => {
+        autocomplete.search(keyword, (status, result) => {
+          const tips = (status === 'complete' && result.tips) ? result.tips.filter(t => t.location) : [];
+          if (tips.length > 0) { resolve([tips[0].location.lng, tips[0].location.lat]); return; }
+          withGeocoder(g => {
+            g.getLocation(keyword, (s2, r2) => {
+              if (s2 === 'complete' && r2.geocodes?.length > 0) {
+                const loc = r2.geocodes[0].location;
+                resolve([loc.lng, loc.lat]);
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          // geocoder 极端情况下未就绪也不至于永久挂起
+          setTimeout(() => resolve(null), 8000);
+        });
+      });
+    }
+
+    async function resolveEndpoint(inputEl) {
+      if (hasValidCoord(inputEl)) {
+        return [parseFloat(inputEl.dataset.lng), parseFloat(inputEl.dataset.lat)];
+      }
+      return await resolveKeyword(inputEl.value.trim());
+    }
+
+    async function planRoute(showLoading = true) {
+      const startVal = DOM.startInput.value.trim();
+      const endVal = DOM.endInput.value.trim();
+      if (!startVal || !endVal) return;
+
+      /* 【修复】并发锁：routeBtn 原本没有任何防重复点击，连点几次会瞬时打出 4×N 个
+       * Driving 请求，撞限流后静默失败。规划期间禁用按钮并直接忽略重复触发。 */
+      if (State.planning) return;
+
+      // 本次请求的序号，返回时若已过期则整批丢弃
+      const seq = ++State.planSeq;
+      State.planning = true;
+      DOM.routeBtn.disabled = true;
+      const done = () => {
+        if (seq !== State.planSeq) return;
+        State.planning = false;
+        DOM.routeBtn.disabled = false;
+        if (State.planPending) {   // 补跑被并发锁挡下的那次输入变更
+          State.planPending = false;
+          scheduleAutoPlan();
+        }
+      };
+
+      State.overlays.forEach(o => map.remove(o)); State.overlays = [];
+      State.markers.forEach(m => map.remove(m)); State.markers = [];
+      State.routes = []; State.activeIdx = 0; DOM.routeTabs.innerHTML = '';
+
+      if (showLoading) {
+        DOM.routePanel.classList.remove('hidden');
+        DOM.panel.innerHTML = '<div style="color:#6b7280;display:flex;align-items:center;gap:8px;padding:10px 0;"><div class="spinner" style="border-color:rgba(79,70,229,0.3);border-top-color:#4f46e5;"></div> 正在计算最优路线...</div>';
+      }
+
+      try {
+        const [startParam, endParam] = await Promise.all([
+          resolveEndpoint(DOM.startInput),
+          resolveEndpoint(DOM.endInput)
+        ]);
+
+        // 过期结果（用户在等待期间又改了输入）直接丢弃，避免旧路线覆盖新路线
+        if (seq !== State.planSeq) return;
+
+        const unresolved = [];
+        if (!startParam) unresolved.push(`起点「${startVal}」`);
+        if (!endParam) unresolved.push(`终点「${endVal}」`);
+        if (unresolved.length > 0) {
+          if (showLoading) {
+            DOM.routePanel.classList.remove('hidden');
+            DOM.panel.innerHTML = `<div style="color:#dc2626;padding:8px 0;">无法识别${unresolved.join('、')}，请从下拉联想中选择具体地点。</div>`;
+            showToast('地点解析失败', true);
+          }
+          return;
+        }
+
+        // 回写解析出的坐标，后续切换策略/重规划不必再解析一次
+        DOM.startInput.dataset.lng = startParam[0]; DOM.startInput.dataset.lat = startParam[1];
+        DOM.endInput.dataset.lng = endParam[0]; DOM.endInput.dataset.lat = endParam[1];
+        DOM.startInput.dataset.useLocation = '1'; DOM.endInput.dataset.useLocation = '1';
+
+        const promises = STRATEGIES.map(strategy =>
+          searchRoutePromise(getDriving(strategy.policy), startParam, endParam).then(res => {
+            if (res.status === 'success') {
+              res.route._strategyName = strategy.label;
+              return res.route;
+            }
+            return null;
+          })
+        );
+
+        const results = await Promise.allSettled(promises);
+        if (seq !== State.planSeq) return;   // 同样做过期校验
+
+        const validRoutes = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+
+        const uniqueRoutes = [];
+        const seen = new Set();
+        validRoutes.forEach(route => {
+          const key = `${route.distance}_${route.time}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueRoutes.push(route);
+          }
+        });
+
+        uniqueRoutes.sort((a, b) => a.time - b.time);
+
+        if (uniqueRoutes.length > 0) {
+          State.routes = uniqueRoutes;
+          DOM.routePanel.classList.remove('hidden');
+          renderRoutes();
+          if (showLoading) showToast(`成功获取 ${State.routes.length} 条路线方案`);
+        } else if (showLoading) {
+          /* 【修复】原来 showLoading=false（输入防抖触发的静默规划）失败时，
+           * 也会把面板从隐藏状态强行弹出来显示红字报错，用户没点任何按钮就被打断。
+           * 现在只有主动点击/回车规划才展示错误。 */
+          DOM.routePanel.classList.remove('hidden');
+          DOM.panel.innerHTML = '<div style="color:#dc2626;padding:8px 0;">未能规划出路线（可能触发服务限流或两地不可达），请稍后重试。</div>';
+          showToast('规划失败', true);
+        }
+      } catch (err) {
+        console.error('[planRoute]', err);
+        if (showLoading && seq === State.planSeq) {
+          DOM.panel.innerHTML = '<div style="color:#dc2626;padding:8px 0;">规划过程出错：' + err.message + '</div>';
+          showToast('规划出错', true);
+        }
+      } finally {
+        done();
+      }
+    }
+
+    // ==========================================
+    // 5. 路线渲染逻辑 (支持导航模式下的高亮重构)
+    // ==========================================
+    function renderRoutes(isNavMode = false) {
+      State.overlays.forEach(o => map.remove(o)); State.overlays = [];
+
+      // 在导航模式下，只渲染当前激活的路线，并且采用高亮加粗样式，防止备选路线干扰
+      const routesToRender = (isNavMode ? [State.routes[State.activeIdx]] : State.routes)
+        // 【修复】过滤掉 steps 缺失的脏数据，否则下面 step.path 的 flatMap 会直接抛错中断渲染
+        .filter(r => r && Array.isArray(r.steps) && r.steps.length > 0);
+
+      if (routesToRender.length === 0) {
+        State.markers.forEach(m => map.remove(m)); State.markers = [];
+        if (!isNavMode) renderTabs();
+        return;
+      }
+      
+      routesToRender.forEach((route, idx) => {
+        // 导航模式下当前路线就是 active
+        const isActive = isNavMode || (idx === State.activeIdx);
+        const path = route.steps.flatMap(step => step.path);
+        
+        const polyline = new AMap.Polyline({
+          path, 
+          strokeColor: isActive ? (isNavMode ? COLORS.navActive : COLORS.active) : COLORS.inactive,
+          strokeWeight: isActive ? (isNavMode ? 12 : 8) : 5, // 导航时线宽 12 更醒目
+          strokeOpacity: isActive ? 1 : 0.55,
+          lineJoin: 'round', lineCap: 'round', 
+          zIndex: isActive ? (isNavMode ? 500 : 100) : 50, // 导航时 Z 轴置顶
+          showDir: isActive, cursor: 'pointer'
+        });
+        
+        if (!isActive) polyline.on('click', () => setActiveRoute(idx));
+        map.add(polyline);
+        State.overlays.push(polyline);
+      });
+
+      State.markers.forEach(m => map.remove(m)); State.markers = [];
+      const activeRoute = State.routes[State.activeIdx];
+      
+      // 导航模式下隐藏起终点标，避免遮挡视野
+      if (!isNavMode && activeRoute?.steps?.length > 0) {
+        const startPos = activeRoute.steps[0].path[0];
+        const endStep = activeRoute.steps[activeRoute.steps.length - 1];
+        const endPos = endStep.path[endStep.path.length - 1];
+        const mkStart = new AMap.Marker({ position: startPos, content: `<div style="width:20px;height:20px;border-radius:50%;background:#10b981;border:3px solid #fff;box-shadow:0 2px 8px rgba(16,185,129,0.5);"></div>`, offset: new AMap.Pixel(-10,-10), zIndex: 300 });
+        const mkEnd = new AMap.Marker({ position: endPos, content: `<div style="width:20px;height:20px;border-radius:50%;background:#ef4444;border:3px solid #fff;box-shadow:0 2px 8px rgba(239,68,68,0.5);"></div>`, offset: new AMap.Pixel(-10,-10), zIndex: 300 });
+        map.add([mkStart, mkEnd]);
+        State.markers.push(mkStart, mkEnd);
+      }
+
+      if (!isNavMode) {
+        renderTabs();
+        renderDetails(activeRoute);
+        map.setFitView([...State.overlays, ...State.markers]);
+      }
+    }
+
+    function renderTabs() {
+      DOM.routeTabs.innerHTML = State.routes.map((route, idx) => {
+        const isActive = idx === State.activeIdx;
+        const name = route._strategyName || (idx === 0 ? '推荐路线' : `备选 ${idx}`);
+        const dist = (route.distance / 1000).toFixed(1);
+        const mins = Math.round(route.time / 60);
+        return `<div class="route-tab ${isActive ? 'active' : ''}" data-idx="${idx}">
+            <div class="tab-main">${name}</div>
+            <div class="tab-sub">${dist} km · ${mins} 分钟</div>
+          </div>`;
+      }).join('');
+
+      DOM.routeTabs.querySelectorAll('.route-tab').forEach(tab => {
+        tab.addEventListener('click', () => setActiveRoute(parseInt(tab.dataset.idx)));
+      });
+    }
+
+    function renderDetails(route) {
+      if (!route?.steps) { DOM.panel.innerHTML = ''; return; }
+      DOM.panel.innerHTML = route.steps.map((step, i) => {
+        const distText = step.distance ? (step.distance > 1000 ? (step.distance/1000).toFixed(1) + ' km' : step.distance + ' m') : '';
+        return `<div class="route-step">
+            <span class="index">${i + 1}</span>
+            <div>
+              <div class="desc">${escapeHtml(step.instruction || '')}</div>
+              ${distText ? `<div class="dist">${distText}</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function setActiveRoute(idx) {
+      if (idx === State.activeIdx || idx < 0 || idx >= State.routes.length) return;
+      State.activeIdx = idx;
+      renderRoutes();
+    }
+
+    // ==========================================
+    // 6. 自动规划与输入监听
+    // ==========================================
+    function scheduleAutoPlan() {
+      if (!DOM.startInput.value.trim() || !DOM.endInput.value.trim()) return;
+      clearTimeout(State.autoPlanTimer);
+      // 600ms 太短，手输地名时容易在联想面板还没点出来时就触发规划，
+      // 既浪费配额又会让地图 setFitView 反复跳动。放宽到 900ms 并在规划中跳过。
+      State.autoPlanTimer = setTimeout(() => {
+        // 上一批规划还没回来时不要丢弃用户的新输入，标记待办，等它结束后自动补跑一次
+        if (State.planning) { State.planPending = true; return; }
+        planRoute(false);
+      }, 900);
+    }
+
+    function bindInputEvents(inputEl) {
+      inputEl.addEventListener('input', () => {
+        clearInputCoords(inputEl);
+        scheduleAutoPlan();
+        handleInputSuggest(inputEl);
+      });
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); planRoute(true); }
+      });
+      inputEl.addEventListener('focus', () => {
+        if (State.isPicking) exitPickMode();
+        if (inputEl.value.trim() && !hasValidCoord(inputEl)) {
+          handleInputSuggest(inputEl);
+        }
+      });
+    }
+
+    bindInputEvents(DOM.startInput);
+    bindInputEvents(DOM.endInput);
+
+    DOM.routeBtn.addEventListener('click', () => planRoute(true));
+    DOM.closePanelBtn.addEventListener('click', () => DOM.routePanel.classList.add('hidden'));
+
+    DOM.swapBtn.addEventListener('click', () => {
+      [DOM.startInput.value, DOM.endInput.value] = [DOM.endInput.value, DOM.startInput.value];
+      [DOM.startInput.dataset.lng, DOM.endInput.dataset.lng] = [DOM.endInput.dataset.lng, DOM.startInput.dataset.lng];
+      [DOM.startInput.dataset.lat, DOM.endInput.dataset.lat] = [DOM.endInput.dataset.lat, DOM.startInput.dataset.lat];
+      [DOM.startInput.dataset.useLocation, DOM.endInput.dataset.useLocation] = [DOM.endInput.dataset.useLocation, DOM.startInput.dataset.useLocation];
+      scheduleAutoPlan();
+    });
+
+    // ==========================================
+    // 7. 智能搜索联想与实时测距
+    // ==========================================
+    const autocomplete = new AMap.AutoComplete({ city: '全国' });
+
+    function handleInputSuggest(inputEl) {
+      const keyword = inputEl.value.trim();
+      if (!keyword) { removeSuggestionPanel(inputEl); return; }
+
+      clearTimeout(inputEl._suggestTimer);
+      inputEl._suggestTimer = setTimeout(() => {
+        autocomplete.search(keyword, (status, result) => {
+          if (status === 'complete' && result.tips) {
+            renderSuggestionPanel(inputEl, result.tips.filter(t => t.location));
+          } else {
+            removeSuggestionPanel(inputEl);
+          }
+        });
+      }, 300);
+    }
+
+    function renderSuggestionPanel(inputEl, tips) {
+      removeSuggestionPanel(inputEl);
+      if (tips.length === 0) return;
+
+      const panel = document.createElement('div');
+      panel.className = 'custom-suggestion-panel';
+      
+      panel.innerHTML = tips.map((tip, idx) => {
+        let distHtml = '';
+        if (State.currentPos) {
+          const dist = AMap.GeometryUtil.distance([State.currentPos.lng, State.currentPos.lat], [tip.location.lng, tip.location.lat]);
+          const text = dist > 1000 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m';
+          distHtml = `<span class="suggestion-distance">${text}</span>`;
+        }
+        return `<div class="custom-suggestion-item" data-idx="${idx}">
+          <div style="flex: 1; min-width: 0;">
+            <div class="suggestion-title">${escapeHtml(tip.name)}</div>
+            <div class="suggestion-sub">${escapeHtml((tip.district || '') + (tip.address || ''))}</div>
+          </div>
+          ${distHtml}
+        </div>`;
+      }).join('');
+
+      panel.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('.custom-suggestion-item');
+        if (!item) return;
+        e.preventDefault();
+        
+        const tip = tips[parseInt(item.dataset.idx)];
+        inputEl.value = tip.name;
+        inputEl.dataset.lng = tip.location.lng;
+        inputEl.dataset.lat = tip.location.lat;
+        inputEl.dataset.useLocation = '1';
+        
+        removeSuggestionPanel(inputEl);
+        scheduleAutoPlan();
+      });
+
+      inputEl.parentElement.appendChild(panel);
+    }
+
+    function removeSuggestionPanel(inputEl) {
+      const old = inputEl.parentElement.querySelector('.custom-suggestion-panel');
+      if (old) old.remove();
+    }
+
+    [DOM.startInput, DOM.endInput].forEach(el => {
+      el.addEventListener('blur', () => setTimeout(() => removeSuggestionPanel(el), 200));
+    });
+
+    // ==========================================
+    // 8. 第一人称导航核心逻辑 (视角前移与路线高亮)
+    // ==========================================
+    let naviMarker = null;
+    let naviMarkerEl = null;   // 【修复】缓存小车图标 DOM，避免每个 GPS 点都 setContent 重建节点
+    let locMarker = null, locCircle = null;
+    let currentHeading = 0;
+
+    const NAVI_ICON_SIZE = 40;
+    function buildNaviIcon() {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = `width:${NAVI_ICON_SIZE}px;height:${NAVI_ICON_SIZE}px;background:#4f46e5;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(79,70,229,0.6);display:flex;align-items:center;justify-content:center;`;
+      const inner = document.createElement('div');
+      inner.style.cssText = 'font-size:20px;line-height:1;transition:transform .2s linear;';
+      inner.textContent = '🚗';
+      wrap.appendChild(inner);
+      return { wrap, inner };
+    }
+
+    function setNaviHeading(heading) {
+      currentHeading = ((heading % 360) + 360) % 360;
+      /* 【修复】原实现每收到一个定位点就 setContent 重建整棵 DOM（还顺带读了一次 getContent），
+       * 高频点位下会明显闪烁并产生 GC 压力。改为只更新内层节点的 transform。
+       * 角度经 carIconAngle() 换算：车头向上模式下要抵消地图自身的旋转。 */
+      if (naviMarkerEl) naviMarkerEl.style.transform = `rotate(${carIconAngle(currentHeading)}deg)`;
+    }
+
+    /* 【新增】导航视角渲染循环
+     * 用 rAF 而不是「每来一个 GPS 点转一次」：GPS 通常 1Hz，罗盘却能给到 30~60Hz，
+     * 只有跟着罗盘高频插值，转头时地图才会像高德那样平滑跟随，而不是一格一格跳。 */
+    let navRafId = null;
+    let navLastCenter = null;
+    let navLastAppliedHeading = -999;
+    function navRenderLoop() {
+      if (!State.navMode) { navRafId = null; return; }
+
+      const manual = Date.now() < State.navManualUntil;   // 用户手动操作期间不抢视角
+      if (!manual && State.currentPos) {
+        // 角度变化小于 0.3° 时不重设，避免每帧都触发底图重绘
+        if (Math.abs(((Heading.value - navLastAppliedHeading + 540) % 360) - 180) > 0.3) {
+          applyMapHeading(Heading.value);
+          if (naviMarkerEl) naviMarkerEl.style.transform = `rotate(${carIconAngle(Heading.value)}deg)`;
+          navLastAppliedHeading = Heading.value;
+        }
+
+        /* 中心点只在「真的动了」时才更新：静止不动时只转视角，
+         * 每帧都 setCenter 会白白吃 CPU 并让底图反复重绘。
+         * 车头向上模式下，中心点始终取"车前方 120 米"，
+         * 于是无论朝向怎么变，小车都稳定停在屏幕中心偏下、前方路况可见。 */
+        const ahead = getMapCenterAhead(State.currentPos.lng, State.currentPos.lat, Heading.value, 120);
+        const moved = !navLastCenter
+          || Math.abs(ahead[0] - navLastCenter[0]) > 1e-6
+          || Math.abs(ahead[1] - navLastCenter[1]) > 1e-6;
+        if (moved) { map.setCenter(ahead); navLastCenter = ahead; }
+      }
+      navRafId = requestAnimationFrame(navRenderLoop);
+    }
+
+    /* =====================================================================
+     * 【新增】航向角模块：罗盘 + GPS 融合
+     * ---------------------------------------------------------------------
+     * 为什么必须加这个：
+     * navigator.geolocation 返回的 coords.heading 只有在「设备移动中」才有值，
+     * 静止时（也就是你刚点下"开始导航"那一刻）它是 null。原代码此时只能退化成
+     * currentHeading = 0，于是地图永远先转到正北，而不是你当前面朝的方向。
+     * 要拿到"人面朝哪"，只能用设备磁力计/陀螺仪（DeviceOrientation）。
+     *
+     * 融合策略（与高德 App 一致）：
+     *   - 静止 / 低速(<1.5m/s)：用罗盘方位角（磁力计）
+     *   - 移动中：用 GPS heading（更准，且不受金属车体磁干扰）
+     *   - 两者切换时做圆滑插值，避免指针突跳
+     * ===================================================================== */
+    const Heading = {
+      value: 0,          // 融合后的平滑航向（0=正北，顺时针）
+      compass: null,     // 罗盘原始值
+      gps: null,         // GPS 原始值
+      speed: 0,          // 当前速度 m/s
+      listening: false,
+      gotAbsolute: false,// 是否已收到 deviceorientationabsolute（Android 真北基准）
+      useCompass: true,  // 罗盘不可用时自动置 false
+    };
+
+    const DEG = Math.PI / 180;
+
+    /* 可调校准偏移：若实测发现朝向整体固定偏了几度（磁偏角 / 设备传感器差异），
+     * 改这一个数字即可，不用动下面的算法。广东地区磁偏角约 -3°，一般无需修正。 */
+    const COMPASS_OFFSET = 0;
+
+    /* 从 DeviceOrientationEvent 推算罗盘方位角（0=正北，顺时针）。
+     *
+     * 为什么不用 W3C 文档里那段 atan(Vx/Vy)：
+     * 该式在「手机竖直握持」(beta≈90°，也就是车载支架/手持导航最常见的姿势) 时
+     * Vy→0，atan(0/0) 直接得 NaN，罗盘会整个失效。
+     *
+     * 这里改用几何推导的稳定形式。设备到世界的旋转矩阵 R = Rz(α)·Rx(β)·Ry(γ)，
+     * 世界系取 x=东, y=北, z=天：
+     *   · 屏幕顶边(设备 Y 轴)在世界系 = (-sinα·cosβ, cosα·cosβ, sinβ)
+     *     → 方位角 = atan2(-sinα, cosα) = -α，与 β、γ 无关，但 cosβ→0 时水平投影退化；
+     *   · 屏幕法线(设备 Z 轴)在 β=90° 时 = (sin(α+γ), -cos(α+γ), 0)
+     *     → 用户面朝方向（法线反向）= -(α+γ)。
+     * 因此按 |β| 分段：接近水平用顶边投影，接近竖直用法线投影。 */
+    function compassHeadingFromEvent(e) {
+      // iOS Safari 直接给出系统级罗盘角（已含倾斜补偿，顺时针自磁北）
+      if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+        return e.webkitCompassHeading + COMPASS_OFFSET;
+      }
+      if (e.alpha == null || isNaN(e.alpha)) return null;
+
+      const alpha = e.alpha;
+      const beta = e.beta || 0;
+      const gamma = e.gamma || 0;
+      let heading;
+
+      if (Math.abs(beta) < 70) {
+        heading = -alpha;                 // 顶边水平投影：与 β、γ 无关
+      } else {
+        heading = -(alpha + gamma);       // 竖直握持：改用屏幕法线的反方向
+      }
+      return heading + COMPASS_OFFSET;
+    }
+
+    function onDeviceOrientation(e) {
+      /* Android Chrome 会同时派发 deviceorientationabsolute 与 deviceorientation：
+       * 前者的 alpha 相对「真北」，后者的 alpha 只相对「设备开机时的朝向」，
+       * 拿后者当罗盘会导致朝向随开机姿势乱偏。因此一旦收到过 absolute 事件，
+       * 就永久忽略非 absolute 事件；iOS 没有 absolute 事件，走 webkitCompassHeading 分支。 */
+      if (e.type === 'deviceorientationabsolute') {
+        Heading.gotAbsolute = true;
+      } else if (Heading.gotAbsolute) {
+        return;
+      }
+      const h = compassHeadingFromEvent(e);
+      if (h == null || isNaN(h)) return;
+      Heading.compass = ((h % 360) + 360) % 360;   // 归一到 [0,360)
+      Heading.useCompass = true;
+    }
+
+    /* iOS 13+ 必须在用户手势的同步调用栈里申请权限，异步回调里再调会被拒。
+     * 所以要在"开始导航"按钮的 click 处理里第一时间调用。 */
+    function requestCompassPermission() {
+      return new Promise((resolve) => {
+        try {
+          const DOE = window.DeviceOrientationEvent;
+          if (DOE && typeof DOE.requestPermission === 'function') {
+            DOE.requestPermission().then(state => resolve(state === 'granted')).catch(() => resolve(false));
+            return;
+          }
+        } catch (err) { /* 忽略，走监听降级 */ }
+        resolve(true);
+      });
+    }
+
+    function startCompass() {
+      if (Heading.listening) return;
+      Heading.listening = true;
+      // Android/Chrome 需要 absolute 事件才是相对正北；iOS 走 deviceorientation
+      window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+      window.addEventListener('deviceorientation', onDeviceOrientation, true);
+    }
+
+    function stopCompass() {
+      Heading.listening = false;
+      window.removeEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+      window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+    }
+
+    /* 圆滑插值：走最短弧，避免 359°→1° 时地图反向转一整圈 */
+    function lerpAngle(from, to, t) {
+      let diff = ((to - from + 540) % 360) - 180;
+      return (from + diff * t + 360) % 360;
+    }
+
+    /* 融合并平滑：GPS 有速度时优先 GPS，否则用罗盘 */
+    function updateHeading(gpsHeading, speed) {
+      if (typeof speed === 'number' && !isNaN(speed)) Heading.speed = speed;
+
+      let target = null;
+      const moving = Heading.speed > 1.5;   // ~5.4 km/h 以上认为在移动
+      if (moving && gpsHeading != null && !isNaN(gpsHeading)) {
+        target = gpsHeading;
+        Heading.gps = gpsHeading;
+      } else if (Heading.compass != null) {
+        target = Heading.compass;
+      } else if (gpsHeading != null && !isNaN(gpsHeading)) {
+        target = gpsHeading;   // 罗盘不可用时退回 GPS
+        Heading.useCompass = false;
+      }
+      if (target == null) return Heading.value;
+
+      Heading.value = lerpAngle(Heading.value, (target + 360) % 360, 0.35);
+      return Heading.value;
+    }
+
+    /* 【核心修复】高德 JS API 2.0 官方文档定义：rotation = 地图「顺时针」旋转角度。
+     * 要让前进方向朝屏幕正上方（车头向上），地图必须「逆时针」转 heading，
+     * 即 setRotation(-heading)。原代码写的是 setRotation(heading)，方向正好相反，
+     * 于是车头朝东时前进方向被转到屏幕下方 —— 就是你看到的"地图转到背面去"。 */
+    function applyMapHeading(heading) {
+      const h = ((heading % 360) + 360) % 360;   // 归一到 [0,360)
+      map.setRotation((360 - h) % 360);          // 逆时针 h 度 == 顺时针 (360-h) 度
+    }
+
+    /* DOM 标记是否随地图一起旋转：高德 2.0 中自定义 DOM 标记位于会被 rotation 变换的
+     * 覆盖物层，因此会跟着地图转。车头向上模式下需要反向补偿 heading，
+     * 小车才会稳定指向屏幕正上方。若你在真机上发现车头方向反了，
+     * 把这个常量改成 false 即可（这是唯一的开关点）。 */
+    const MARKER_ROTATES_WITH_MAP = true;
+    function carIconAngle(heading) {
+      if (!State.navMode) return heading;                    // 非导航：显示绝对航向
+      return MARKER_ROTATES_WITH_MAP ? heading : 0;          // 导航(车头向上)：补偿后指向正上
+    }
+
+
+    /* 【修复 1】增加 onError 回调：原代码失败时只弹 toast，调用方无从知晓，
+     *          导致 locateBtn 被置 disabled 后永远无法恢复（点一次失败就彻底卡死）。
+     * 【修复 2】移除「转换失败就用原始 GPS 坐标」的兜底：
+     *          中国境内 WGS-84 与高德 GCJ-02 相差 100~700 米，静默使用会让小车、
+     *          起点标记明显偏离道路，用户以为是地图或算法错了。宁可报错也不返回偏移坐标。
+     */
+    function getPreciseLocation(onSuccess, onError) {
+      const fail = (msg) => {
+        showToast(msg, true);
+        if (typeof onError === 'function') onError(msg);
+      };
+      if (!navigator.geolocation) { fail('当前浏览器不支持定位'); return; }
+      if (!window.isSecureContext) {
+        fail('定位需要 HTTPS 或 localhost 环境，请检查访问方式');
+        return;
+      }
+      const geoOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          try {
+            AMap.convertFrom([p.coords.longitude, p.coords.latitude], 'gps', (status, result) => {
+              if (status === 'complete' && result.locations?.length > 0) {
+                const amapLngLat = result.locations[0];
+                onSuccess(amapLngLat.lng, amapLngLat.lat);
+              } else {
+                fail('坐标纠偏失败，请检查网络后重试');
+              }
+            });
+          } catch (err) {
+            fail('坐标纠偏异常：' + err.message);
+          }
+        },
+        (e) => {
+          const errorMsg = e.code === 1 ? '定位权限被拒绝，请在浏览器设置中允许获取位置'
+                         : e.code === 2 ? '当前无法获取位置信号'
+                         : e.code === 3 ? '定位超时，请到开阔处重试'
+                         : '定位失败';
+          fail(errorMsg);
+        },
+        geoOptions
+      );
+    }
+
+    function updateLocationMarker(lng, lat, accuracy) {
+      const pos = [lng, lat];
+      State.currentPos = { lng, lat };
+      
+      if (!locMarker) {
+        locMarker = new AMap.Marker({ map, position: pos, content: `<div style="position:relative;width:22px;height:22px;"><div style="position:absolute;inset:0;background:#4f46e5;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(79,70,229,0.5);"></div><div style="position:absolute;inset:0;border-radius:50%;background:rgba(79,70,229,0.3);animation:pulse-ring 2s infinite;"></div></div>`, offset: new AMap.Pixel(-11,-11), zIndex: 200 });
+      } else {
+        locMarker.setPosition(pos);
+      }
+      
+      if (accuracy && accuracy < 500) {
+        if (!locCircle) locCircle = new AMap.Circle({ map, strokeColor: '#4f46e5', strokeOpacity: .3, strokeWeight: 1, fillColor: '#4f46e5', fillOpacity: .08, zIndex: 150 });
+        locCircle.setCenter(pos); locCircle.setRadius(accuracy);
+      }
+      
+      if (!State.navMode) {
+        // 【修复】原来每次定位回调都 setCenter + setZoom(16)，
+        // 持续跟踪时会不断把用户手动缩放/平移的视图拽回去。改为只在首次定位时设定层级。
+        map.setCenter(pos);
+        if (!locMarker._zoomedOnce) { map.setZoom(16); locMarker._zoomedOnce = true; }
+      }
+    }
+
+    // 计算车辆前方一定距离的坐标，用作视野中心点
+    function getMapCenterAhead(lng, lat, heading, distance = 150) {
+      if (heading === undefined || heading === null || isNaN(heading)) {
+        heading = 0; // 默认正北
+      }
+      const rad = heading * Math.PI / 180;
+      const R = 6378137;
+      const dLat = (distance * Math.cos(rad)) / R * (180 / Math.PI);
+      const dLng = (distance * Math.sin(rad)) / (R * Math.cos(lat * Math.PI / 180)) * (180 / Math.PI);
+      return [lng + dLng, lat + dLat];
+    }
+
+    function startNavigation() {
+      if (State.routes.length === 0) { showToast('请先规划路线', true); return; }
+      if (State.navMode) return;   // 【修复】防止重复触发导致多个 watchPosition 叠加
+
+      /* 【关键】iOS 13+ 的罗盘权限必须在用户手势的同步调用栈里申请，
+       * 且只能申请一次 —— 下面 getPreciseLocation 回调里会递归再调一次 startNavigation，
+       * 那已经在异步栈里，重复申请必被系统拒绝，还会误报"未获得指南针权限"。
+       * 拿不到罗盘就是"点开始导航后地图不朝我面朝的方向"的直接原因。 */
+      if (!State.compassAsked) {
+        State.compassAsked = true;
+        requestCompassPermission().then(granted => {
+          if (!granted) {
+            Heading.useCompass = false;
+            showToast('未获得指南针权限，朝向将依赖 GPS（静止时可能不准）', true);
+          }
+        });
+      }
+      startCompass();
+      // 给罗盘 400ms 出第一帧读数，随后立即把地图转到面朝方向，不必等 GPS
+      setTimeout(() => {
+        if (!State.navMode) return;
+        if (Heading.compass != null) {
+          Heading.value = Heading.compass;
+          applyMapHeading(Heading.value);
+        } else {
+          Heading.useCompass = false;
+          showToast('本机未提供指南针数据，朝向将依赖 GPS', true);
+        }
+      }, 400);
+
+      if (!State.currentPos) {
+        showToast('正在获取高精定位...', false, true);
+        getPreciseLocation((lng, lat) => {
+          updateLocationMarker(lng, lat, 50);
+          startNavigation();
+        }, () => {
+          // 【修复】原代码没有失败回调，定位失败时 loading toast 会永久转圈不消失
+          DOM.locToast.classList.remove('show');
+        });
+        return;
+      }
+
+      State.navMode = true;
+      State.navErrCount = 0;
+      State.navManualUntil = 0;
+      navLastCenter = null;   // 重新计算中心点，避免沿用上次导航的旧值
+      navLastAppliedHeading = -999;
+      /* 【修复】原来这里硬写 currentHeading = 0，等于强制"正北朝上"，
+       * 完全无视用户当前面朝方向。改为：有罗盘读数就用罗盘，没有才退回 0。 */
+      Heading.value = (Heading.compass != null) ? Heading.compass : 0;
+      currentHeading = Heading.value;
+      showToast('第一人称导航启动');
+
+      DOM.searchPanel.classList.add('dimmed');
+      DOM.fabGroup.classList.add('dimmed');
+      DOM.routePanel.classList.add('hidden');
+      DOM.startNavBtn.style.display = 'none';
+      DOM.stopNavBtn.style.display = 'flex';
+      DOM.navFabGroup.style.display = 'flex';   // 显示"回到导航视角"按钮
+
+      if (locMarker) locMarker.hide();
+      if (locCircle) locCircle.hide();
+
+      // 导航模式下重绘路线，去除干扰并加粗高亮
+      renderRoutes(true);
+
+      /* 【新增】导航视角升级为高德式 3D：
+       * zoom 17.5 起楼块才会出现，pitch 60 才能看到建筑立面；
+       * 立刻按当前面朝方向旋转，不再等第一个 GPS 点（原来要等 1 秒以上才转，观感就是"先转到背面"）。 */
+      set3DMode(true, true);
+      map.setZoomAndCenter(NAV_ZOOM, [State.currentPos.lng, State.currentPos.lat], false, 300);
+      map.setPitch(NAV_PITCH, false, 300);
+      applyMapHeading(Heading.value);
+
+      if (!naviMarker) {
+        const icon = buildNaviIcon();
+        naviMarkerEl = icon.inner;
+        naviMarker = new AMap.Marker({
+          map: map,
+          position: [State.currentPos.lng, State.currentPos.lat],
+          content: icon.wrap,
+          offset: new AMap.Pixel(-NAVI_ICON_SIZE / 2, -NAVI_ICON_SIZE / 2),
+          zIndex: 500
+        });
+      } else {
+        naviMarker.setPosition([State.currentPos.lng, State.currentPos.lat]);
+        naviMarker.show();
+      }
+      setNaviHeading(Heading.value);
+
+      if (navRafId === null) navRafId = requestAnimationFrame(navRenderLoop);
+
+      if (State.watchId !== null) navigator.geolocation.clearWatch(State.watchId);
+
+      State.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { longitude, latitude, heading, speed } = position.coords;
+          State.navErrCount = 0;   // 收到有效点位就清零容错计数
+
+          /* 【核心修复】把 GPS heading 与罗盘融合后写入 Heading.value，
+           * 由 navRenderLoop 高频平滑地驱动地图旋转；
+           * 这里不再直接 map.setRotation(heading)（那正是"转到背面"的根因）。 */
+          updateHeading(heading, speed);
+
+          AMap.convertFrom([longitude, latitude], 'gps', (status, result) => {
+            if (status !== 'complete' || !result.locations?.length) return;
+            const amapPos = result.locations[0];
+            State.currentPos = { lng: amapPos.lng, lat: amapPos.lat };
+            if (naviMarker) naviMarker.setPosition([amapPos.lng, amapPos.lat]);
+          });
+        },
+        (error) => {
+          /* 【修复】原实现 error 一响就立刻 stopNavigation()。但 timeout:15000 在隧道、
+           * 高架下、室内停车场等场景极易触发 code=3 的瞬时超时，导航会莫名其妙退出，
+           * 用户正在开车时体验极差。改为：超时/信号弱允许连续容忍 3 次，
+           * 权限被拒(code=1)或不可用(code=2)才立即退出。 */
+          if (error.code === 3 && State.navErrCount < 3) {
+            State.navErrCount++;
+            showToast(`定位信号弱，正在重试(${State.navErrCount}/3)...`, false, true);
+            return;
+          }
+          const msg = error.code === 1 ? '定位权限被收回，导航已退出'
+                    : error.code === 2 ? '定位信号丢失，导航已退出'
+                    : '导航定位超时，已退出';
+          showToast(msg, true);
+          stopNavigation();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
+      );
+    }
+
+    function stopNavigation() {
+      if (!State.navMode) return;
+      State.navMode = false;
+      State.navErrCount = 0;
+      currentHeading = 0;                 // 【修复】复位航向，避免下次进场沿用旧角度
+      Heading.value = 0;
+
+      // 【新增】释放罗盘监听与渲染循环，否则后台会持续吃传感器与 CPU
+      stopCompass();
+      if (navRafId !== null) { cancelAnimationFrame(navRafId); navRafId = null; }
+
+      if (naviMarkerEl) naviMarkerEl.style.transform = 'rotate(0deg)';
+
+      DOM.searchPanel.classList.remove('dimmed');
+      DOM.fabGroup.classList.remove('dimmed');
+      DOM.startNavBtn.style.display = 'flex';
+      DOM.stopNavBtn.style.display = 'none';
+      DOM.navFabGroup.style.display = 'none';
+
+      if (naviMarker) naviMarker.hide();
+      if (locMarker) locMarker.show();
+      if (locCircle) locCircle.show();
+
+      if (State.watchId !== null) {
+        navigator.geolocation.clearWatch(State.watchId);
+        State.watchId = null;
+      }
+
+      // 退出导航视角：压平俯仰、回正旋转，再按当前 3D 档位重设
+      map.setRotation(0, false, 400);
+      set3DMode(VIEW.mode3D, true);
+      map.setPitch(VIEW.mode3D && map.getZoom() >= VIEW.BUILDING_MIN_ZOOM ? VIEW.BROWSE_PITCH : 0, false, 400);
+
+      /* 【修复】原代码无论有没有路线都强行 remove('hidden') 把底部面板弹出来，
+       * 空状态下会显示一个只有标题的空壳面板。有路线才恢复展示。 */
+      if (State.routes.length > 0) {
+        DOM.routePanel.classList.remove('hidden');
+        renderRoutes(false);   // 恢复普通渲染（含备选路线与起终点标记）
+      }
+
+      showToast('已退出导航模式');
+    }
+
+    DOM.startNavBtn.addEventListener('click', startNavigation);
+    DOM.stopNavBtn.addEventListener('click', stopNavigation);
+
+    /* =====================================================================
+     * 【新增】3D 视图与导航视角控制
+     * ===================================================================== */
+    // 3D 楼块 / 2D 平面 切换
+    DOM.toggle3DBtn.addEventListener('click', () => set3DMode(!VIEW.mode3D));
+
+    // 一键回到车头向上视角（用户手动拖图后使用）
+    DOM.navRecenterBtn.addEventListener('click', () => {
+      State.navManualUntil = 0;
+      if (State.currentPos) {
+        applyMapHeading(Heading.value);
+        map.setZoomAndCenter(NAV_ZOOM, [State.currentPos.lng, State.currentPos.lat], false, 300);
+        map.setPitch(NAV_PITCH, false, 300);
+      }
+    });
+
+    /* 导航中用户手动拖动/缩放地图时，暂停 5 秒自动跟随，
+     * 否则每一次 setCenter/setRotation 都会跟用户的手指"抢方向盘"，地图会抖得没法看。
+     * 5 秒后自动恢复车头向上（与高德 App 的行为一致）。 */
+    ['dragstart', 'zoomstart', 'touchstart'].forEach(evt => {
+      map.on(evt, () => {
+        if (State.navMode) State.navManualUntil = Date.now() + 5000;
+      });
+    });
+
+    // 初始按当前档位应用一次 3D 设置（默认开启楼块）
+    set3DMode(true, true);
+
+    // ==========================================
+    // 9. 其他基础控制
+    // ==========================================
+    /* 【修复】删掉了原来的 `new AMap.Geolocation(...)`：它被创建后从未被调用过
+     * （实际定位走的是浏览器原生 navigator.geolocation），属于死代码，
+     * 还白白加载并初始化了一个插件。 */
+
+    /* 【修复】「停止定位」按钮原本永远不显示（全文没有任何地方把它从 display:none 改回来），
+     * 是一段死代码。现在把它接上真实功能：
+     * 点「显示我的位置」= 定位一次 + 开启持续跟随；此时显示停止按钮；
+     * 点「停止定位」= 结束跟随，回到静态蓝点。 */
+    DOM.locateBtn.addEventListener('click', () => {
+      if (State.trackWatchId !== null) {   // 已在跟随中，只把视野拉回当前位置
+        if (State.currentPos) map.setCenter([State.currentPos.lng, State.currentPos.lat]);
+        return;
+      }
+
+      DOM.locateBtn.disabled = true;
+      showToast('正在获取位置...', false, true);
+      getPreciseLocation((lng, lat) => {
+        updateLocationMarker(lng, lat, 50);
+        DOM.locateBtn.disabled = false;
+        startTracking();
+        showToast('已定位到当前位置，正在持续跟随');
+      }, () => {
+        // 【修复】原代码只在成功回调里恢复 disabled，定位失败一次按钮就永久卡死
+        DOM.locateBtn.disabled = false;
+      });
+    });
+
+    function startTracking() {
+      if (State.trackWatchId !== null || !navigator.geolocation) return;
+      if (!window.isSecureContext) { showToast('持续跟随需要 HTTPS 环境', true); return; }
+
+      State.trackWatchId = navigator.geolocation.watchPosition(
+        (p) => {
+          try {
+            AMap.convertFrom([p.coords.longitude, p.coords.latitude], 'gps', (status, result) => {
+              if (status !== 'complete' || !result.locations?.length) return;
+              const loc = result.locations[0];
+              updateLocationMarker(loc.lng, loc.lat, p.coords.accuracy);
+            });
+          } catch (err) { console.error('[tracking]', err); }
+        },
+        (err) => {
+          // 瞬时超时不打断跟随，只有权限问题才停止
+          if (err.code !== 3) {
+            showToast('持续定位中断：' + (err.code === 1 ? '权限被拒绝' : '信号不可用'), true);
+            stopTracking(true);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 }
+      );
+
+      DOM.locateBtn.style.display = 'none';
+      DOM.stopLocateBtn.style.display = 'flex';
+      DOM.stopLocateBtn.classList.add('pulse');
+    }
+
+    function stopTracking(silent) {
+      if (State.trackWatchId !== null) {
+        navigator.geolocation.clearWatch(State.trackWatchId);
+        State.trackWatchId = null;
+      }
+      DOM.locateBtn.disabled = false;
+      DOM.locateBtn.style.display = 'flex';
+      DOM.stopLocateBtn.style.display = 'none';
+      DOM.stopLocateBtn.classList.remove('pulse');
+      if (!silent) showToast('已停止定位');
+    }
+
+    DOM.stopLocateBtn.addEventListener('click', () => stopTracking(false));
+
+    DOM.startLocBtn.addEventListener('click', () => {
+      if (State.currentPos) { fillStartPos(State.currentPos.lng, State.currentPos.lat); return; }
+      showToast('正在获取位置...', false, true);
+      getPreciseLocation((lng, lat) => fillStartPos(lng, lat),
+                         () => DOM.locToast.classList.remove('show'));
+    });
+
+    function fillStartPos(lng, lat) {
+      DOM.startInput.value = `当前位置 (${lng.toFixed(6)}, ${lat.toFixed(6)})`;
+      DOM.startInput.dataset.lng = lng; DOM.startInput.dataset.lat = lat;
+      DOM.startInput.dataset.useLocation = '1';
+      showToast('已填入当前位置');
+      // 【修复】geocoder 未就绪时直接调用会抛 TypeError，改为排队等待插件加载完成
+      withGeocoder(g => {
+        g.getAddress([lng, lat], (status, res) => {
+          if (status === 'complete' && res.regeocode) {
+            DOM.startInput.value = res.regeocode.formattedAddress || DOM.startInput.value;
+          }
+          scheduleAutoPlan();
+        });
+      });
+    }
+
+    DOM.resetViewBtn.addEventListener('click', () => {
+      if (State.navMode) return;
+      if (State.overlays.length > 0) map.setFitView([...State.overlays, ...State.markers]);
+      else map.setZoomAndCenter(12, [113.264, 23.129]);
+      // 全览属于"看整体"，回正旋转并按当前 3D 档位重设俯仰角
+      map.setRotation(0, false, 400);
+      map.setPitch(VIEW.mode3D && map.getZoom() >= VIEW.BUILDING_MIN_ZOOM ? VIEW.BROWSE_PITCH : 0, false, 400);
+    });
+
+    // ==========================================
+    // 10. 地图拖拽选点模式
+    // ==========================================
+    let revGeoTimer = null;
+
+    function enterPickMode(target) {
+      State.isPicking = true;
+      State.pickTarget = target;
+      State.pickAddress = '';
+      DOM.pickTag.textContent = target === 'start' ? '起点' : '终点';
+      DOM.pickAddress.innerHTML = '<div class="loading-dot"></div> 拖动地图选择位置...';
+
+      DOM.searchPanel.classList.add('dimmed');
+      DOM.fabGroup.classList.add('dimmed');
+      DOM.crosshair.classList.add('show');
+      DOM.pickCard.classList.add('show');
+      DOM.routePanel.classList.add('hidden');
+
+      const inputEl = target === 'start' ? DOM.startInput : DOM.endInput;
+      const lng = parseFloat(inputEl.dataset.lng);
+      const lat = parseFloat(inputEl.dataset.lat);
+      if (!isNaN(lng) && !isNaN(lat)) map.setZoomAndCenter(16, [lng, lat]);
+      else map.setZoom(16);
+
+      map.on('moveend', reverseGeocodeHandler);
+      map.on('zoomend', reverseGeocodeHandler);
+      setTimeout(() => { if (State.isPicking) reverseGeocodeHandler(); }, 350);
+    }
+
+    function exitPickMode() {
+      State.isPicking = false;
+      State.pickTarget = null;
+      DOM.searchPanel.classList.remove('dimmed');
+      DOM.fabGroup.classList.remove('dimmed');
+      DOM.crosshair.classList.remove('show');
+      DOM.pickCard.classList.remove('show');
+      clearTimeout(revGeoTimer);
+      map.off('moveend', reverseGeocodeHandler);
+      map.off('zoomend', reverseGeocodeHandler);
+      // 【修复】enterPickMode 会把路线面板隐藏，但退出选点时从不恢复，
+      // 已规划好的路线详情会一直消失，只能重新点规划才回来。
+      if (State.routes.length > 0) DOM.routePanel.classList.remove('hidden');
+    }
+
+    function reverseGeocodeHandler() {
+      if (!State.isPicking) return;
+      clearTimeout(revGeoTimer);
+      revGeoTimer = setTimeout(() => {
+        const center = map.getCenter();
+        const lng = center.getLng(), lat = center.getLat();
+        DOM.pickAddress.innerHTML = '<div class="loading-dot"></div> 正在获取地址...';
+        
+        // 【修复】geocoder 可能尚未加载完成（页面刚打开就进选点模式），
+        // 原代码直接调用会抛 TypeError，导致地址栏永远停在「正在获取地址...」。
+        withGeocoder(g => {
+          try {
+            g.getAddress([lng, lat], (status, res) => {
+              if (!State.isPicking) return;
+              State.pickAddress = (status === 'complete' && res.regeocode?.formattedAddress) ? res.regeocode.formattedAddress : '';
+              DOM.pickAddress.textContent = State.pickAddress || `${lng.toFixed(6)}, ${lat.toFixed(6)}`;
+            });
+          } catch (err) {
+            if (!State.isPicking) return;
+            State.pickAddress = '';
+            DOM.pickAddress.textContent = `${lng.toFixed(6)}, ${lat.toFixed(6)}`;
+          }
+        });
+      }, 300);
+    }
+
+    /* 【附加修复】页面卸载/刷新时释放 watchPosition 监听，
+     * 否则部分浏览器会保留定位会话，持续耗电并占用 GPS。 */
+    window.addEventListener('pagehide', () => {
+      [State.watchId, State.trackWatchId].forEach(id => {
+        if (id !== null && navigator.geolocation) navigator.geolocation.clearWatch(id);
+      });
+    });
+
+    DOM.startPickBtn.addEventListener('click', () => { if (State.pickTarget === 'start') exitPickMode(); else { exitPickMode(); enterPickMode('start'); } });
+    DOM.endPickBtn.addEventListener('click', () => { if (State.pickTarget === 'end') exitPickMode(); else { exitPickMode(); enterPickMode('end'); } });
+    DOM.cancelPickBtn.addEventListener('click', () => exitPickMode());
+
+    DOM.confirmPickBtn.addEventListener('click', () => {
+      if (!State.isPicking) return;
+      const center = map.getCenter();
+      const lng = center.getLng(), lat = center.getLat();
+      const inputEl = State.pickTarget === 'start' ? DOM.startInput : DOM.endInput;
+
+      inputEl.value = State.pickAddress || `${lng.toFixed(6)}, ${lat.toFixed(6)}`;
+      inputEl.dataset.lng = lng; inputEl.dataset.lat = lat;
+      inputEl.dataset.useLocation = '1';
+
+      exitPickMode();
+      showToast(`已选择：${escapeHtml(inputEl.value)}`);
+      scheduleAutoPlan();
+    });
+
+  </script>
+</body>
+</html>
