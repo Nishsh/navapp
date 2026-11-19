@@ -112,6 +112,25 @@
     .suggestion-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .suggestion-distance { font-size: 12px; color: var(--primary); font-weight: 600; background: rgba(79,70,229,0.08); padding: 2px 8px; border-radius: 10px; white-space: nowrap; margin-left: 12px; }
 
+    /* ================= 楼块状态徽标 + 数据源设置卡 ================= */
+    .fab-status { max-width: 176px; padding: 5px 10px; border-radius: 12px; background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--glass-border); box-shadow: var(--shadow); font-size: 11px; color: #4b5563; line-height: 1.4; text-align: right; }
+    .fab-status:empty { display: none; }
+    .fab-status b { color: var(--primary); font-weight: 600; }
+
+    .setting-card { position: absolute; left: 16px; right: 16px; bottom: 16px; max-width: 360px; margin: 0 auto; background: var(--glass-bg); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 170; padding: 14px; display: none; flex-direction: column; gap: 10px; }
+    .setting-card.show { display: flex; }
+    .setting-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; color: #1f2937; }
+    .setting-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #374151; line-height: 1.45; cursor: pointer; }
+    .setting-row input { margin-top: 3px; flex-shrink: 0; }
+    .setting-row.small { font-size: 12px; color: #6b7280; }
+    .setting-input { width: 100%; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; padding: 9px 10px; font-size: 12px; color: #1f2937; background: rgba(255,255,255,0.8); outline: none; }
+    .setting-input:focus { border-color: var(--primary); }
+    .setting-input:disabled { background: rgba(0,0,0,0.04); color: #9ca3af; }
+    .setting-actions { display: flex; gap: 8px; }
+    .setting-actions .btn { padding: 9px 12px; font-size: 13px; }
+    .setting-status { font-size: 12px; color: #6b7280; line-height: 1.5; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 8px; }
+    .setting-status.err { color: #dc2626; }
+
     .amap-logo, .amap-copyright { opacity: .6; }
     @media (max-width: 480px) {
       .search-panel { top: 12px; width: calc(100% - 24px); }
@@ -132,6 +151,7 @@
     .fab-group { bottom: calc(32px + env(safe-area-inset-bottom, 0px)) !important; }
     .route-panel { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
     .pick-card { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
+    .setting-card { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
   </style>
 </head>
 <body>
@@ -169,11 +189,27 @@
     </div>
   </div>
 
+  <!-- 楼块数据源设置卡 -->
+  <div class="setting-card" id="buildingCard">
+    <div class="setting-head"><span>3D 楼块数据源</span><button class="close-btn" id="closeBuildingCardBtn">✕</button></div>
+    <label class="setting-row"><input type="radio" name="bSrc" value="osm" checked><span>OSM 真实建筑轮廓（Overpass 实时抓取当前视野）</span></label>
+    <label class="setting-row"><input type="radio" name="bSrc" value="geojson"><span>自定义 GeoJSON（GeoHub / QGIS / 业务后端导出）</span></label>
+    <label class="setting-row"><input type="radio" name="bSrc" value="demo"><span>示例楼块（离线可用，程序生成，非真实建筑）</span></label>
+    <input class="setting-input" id="geojsonUrlInput" placeholder="https://your.domain/buildings.geojson" disabled />
+    <label class="setting-row small"><input type="checkbox" id="geojsonWgs84Chk" checked disabled><span>该 GeoJSON 为 WGS-84 坐标，需纠偏到 GCJ-02</span></label>
+    <div class="setting-actions">
+      <button class="btn btn-primary" id="reloadBuildingBtn">重新加载楼块</button>
+    </div>
+    <div class="setting-status" id="buildingStatus">未加载</div>
+  </div>
+
   <div class="loc-toast" id="locToast"></div>
 
   <!-- 右侧悬浮按钮 -->
   <div class="fab-group" id="fabGroup">
+    <div class="fab-status" id="buildingBadge"></div>
     <button class="fab" id="toggle3DBtn" title="切换 3D 楼块视图">🏢</button>
+    <button class="fab" id="buildingSetBtn" title="楼块数据源设置">⚙️</button>
     <button class="fab" id="resetViewBtn" title="回到全览">🗺️</button>
     <button class="fab primary" id="locateBtn" title="显示我的位置">📍</button>
     <button class="fab danger" id="stopLocateBtn" title="停止定位" style="display:none;">■</button>
@@ -231,6 +267,11 @@
   </script>
   <!-- 【修复】移除未使用的 AMap.Geolocation 与 AMap.MoveAnimation 插件（全文无任何调用），减少首屏加载体积 -->
   <script src="https://webapi.amap.com/maps?v=2.0&key=4c6e1345abf50c26250ddb0342d06c7e&plugin=AMap.Driving,AMap.AutoComplete,AMap.Geocoder,AMap.GeometryUtil"></script>
+  <!-- 【新增】Loca 数据可视化 2.0（官方 WebGL 可视化库，必须与 JS API 2.0 配套）
+       楼块不再依赖底图自带的 building 要素，而是自己加载 GeoJSON 建筑轮廓，
+       用 Loca.PolygonLayer 拉伸成带光照的立体棱柱，效果与高德 App 的 3D 楼块一致。
+       注意：该 URL 的 v 必须写 2.0.0 且必须带 key，否则高德返回「请传正确的版本号参数」。 -->
+  <script src="https://webapi.amap.com/loca?v=2.0.0&key=4c6e1345abf50c26250ddb0342d06c7e"></script>
   <script>
     /* =====================================================================
      * 修复版说明（相对原始 index.html 的改动清单）
@@ -352,7 +393,16 @@
       navBar: document.getElementById('navBar'),
       toggle3DBtn: document.getElementById('toggle3DBtn'),
       navFabGroup: document.getElementById('navFabGroup'),
-      navRecenterBtn: document.getElementById('navRecenterBtn')
+      navRecenterBtn: document.getElementById('navRecenterBtn'),
+      // --- Loca 楼块相关 ---
+      buildingSetBtn: document.getElementById('buildingSetBtn'),
+      buildingCard: document.getElementById('buildingCard'),
+      buildingStatus: document.getElementById('buildingStatus'),
+      buildingBadge: document.getElementById('buildingBadge'),
+      closeBuildingCardBtn: document.getElementById('closeBuildingCardBtn'),
+      reloadBuildingBtn: document.getElementById('reloadBuildingBtn'),
+      geojsonUrlInput: document.getElementById('geojsonUrlInput'),
+      geojsonWgs84Chk: document.getElementById('geojsonWgs84Chk')
     };
 
     // ==========================================
@@ -400,21 +450,404 @@
     const NAV_ZOOM = VIEW.NAV_ZOOM;
     const NAV_PITCH = VIEW.NAV_PITCH;
 
+    /* =====================================================================
+     * 【新增】Loca 楼块可视化 —— GeoJSON 驱动的 3D 建筑
+     * ---------------------------------------------------------------------
+     * 为什么原来的 showBuildingBlock 看着还是平面图：
+     *   高德 JS API 自带楼块完全依赖官方矢量瓦片里的 building 要素。
+     *   瓦片在该区域没有楼块数据、mapStyle 用的是 whitesmoke/自定义样式、
+     *   或 key 的服务范围不含楼块时，即使 viewMode:'3D' + pitch + zoom>=16 全部满足，
+     *   画面依然只有平面色块 —— 前端没有任何办法"造"出官方没有下发的楼块。
+     *
+     * 现在改用官方 Loca 2.0：我们自己拿到建筑轮廓 GeoJSON，
+     * 用 Loca.PolygonLayer 的 height + hasSide + 光照把它拉伸成立体棱柱。
+     * 数据源可控、任何城市都能出效果、还能给单栋楼做点击/高亮等交互。
+     *
+     * 三级数据源（失败自动向下回落，不会白屏）：
+     *   osm     —— Overpass API 实时抓取当前视野的 OpenStreetMap 建筑轮廓（真实数据）
+     *   geojson —— 用户自备楼块 GeoJSON（GeoHub / QGIS / 业务后端导出）
+     *   demo    —— 程序生成的示例楼块，保证离线也看得到 3D 效果（非真实建筑）
+     *
+     * 坐标系：OSM/WGS-84 与高德底图 GCJ-02 相差 100~700m，
+     *         所有 WGS-84 数据先经 wgs84ToGcj02() 纠偏再交给 Loca，否则楼块会整体错位。
+     * ===================================================================== */
+    const LocaOK = (typeof window.Loca !== 'undefined');
+
+    const BUILDING_CFG = {
+      source: 'osm',              // osm | geojson | demo
+      geojsonUrl: '',             // source='geojson' 时的数据地址
+      geojsonIsWgs84: true,       // 自定义 GeoJSON 是否为 WGS-84（需纠偏）
+      minZoom: 15,                // 低于该层级不加载楼块（太多棱柱会卡）
+      maxFeatures: 800,           // 单次最多渲染的建筑数
+      fetchTimeout: 15000,        // 单端点超时
+      reloadDistance: 400,        // 导航中离开已加载中心多少米后重新抓取
+      overpass: [                 // 多端点轮询，任一可用即可
+        'https://overpass-api.de/api/interpreter',
+        'https://lz4.overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter'
+      ]
+    };
+
+    const Buildings = {
+      loca: null, layer: null, ready: false, visible: false, loading: false,
+      count: 0, sourceName: '未加载', cacheKey: '', loadedCenter: null, warnOnce: false
+    };
+
+    /* ---------- WGS-84 -> GCJ-02 纠偏（国测局标准偏移算法） ---------- */
+    const wgs84ToGcj02 = (function () {
+      const PI = Math.PI, A = 6378245.0, EE = 0.00669342162296594323;
+      function outOfChina(lng, lat) { return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271; }
+      function tLat(x, y) {
+        let r = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        r += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+        r += (20 * Math.sin(y * PI) + 40 * Math.sin(y / 3 * PI)) * 2 / 3;
+        r += (160 * Math.sin(y / 12 * PI) + 320 * Math.sin(y * PI / 30)) * 2 / 3;
+        return r;
+      }
+      function tLng(x, y) {
+        let r = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        r += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+        r += (20 * Math.sin(x * PI) + 40 * Math.sin(x / 3 * PI)) * 2 / 3;
+        r += (150 * Math.sin(x / 12 * PI) + 300 * Math.sin(x / 30 * PI)) * 2 / 3;
+        return r;
+      }
+      return function (lng, lat) {
+        if (outOfChina(lng, lat)) return [lng, lat];
+        let dLat = tLat(lng - 105, lat - 35), dLng = tLng(lng - 105, lat - 35);
+        const radLat = lat / 180 * PI;
+        let magic = Math.sin(radLat); magic = 1 - EE * magic * magic;
+        const sqrtMagic = Math.sqrt(magic);
+        dLat = (dLat * 180) / ((A * (1 - EE)) / (magic * sqrtMagic) * PI);
+        dLng = (dLng * 180) / (A / sqrtMagic * Math.cos(radLat) * PI);
+        return [lng + dLng, lat + dLat];
+      };
+    })();
+
+    /* 稳定伪随机：同一栋楼每次刷新高度一致，不会跳变 */
+    function hash01(x, y) { const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    /* ---------- 楼块配色：按高度分档，顶面亮、侧面暗，立体感来自光照+色差 ---------- */
+    function topColorFor(h) {
+      if (h >= 90) return '#d8e4ff';
+      if (h >= 55) return '#bccdf9';
+      if (h >= 30) return '#9fb4f2';
+      return '#8aa4ea';
+    }
+    function sideTopFor(h) {
+      if (h >= 90) return '#9db4f0';
+      if (h >= 55) return '#849ce8';
+      if (h >= 30) return '#6f87de';
+      return '#5f76d1';
+    }
+    const SIDE_BOTTOM = '#2c3d63';
+
+    /* ---------- 统一给每个 feature 写入 _h（米），样式函数只读这个字段 ---------- */
+    function resolveHeight(props, seedLng, seedLat) {
+      let h = parseFloat(props.height) || parseFloat(props['building:height']) || 0;
+      if (!h) {
+        const lv = parseFloat(props['building:levels']) || parseFloat(props.levels) || 0;
+        if (lv > 0) h = lv * 3 + 2;                 // 每层约 3m，加 2m 女儿墙
+      }
+      if (!h) h = 10 + hash01(seedLng, seedLat) * 42;  // 无高度属性：稳定伪随机 10~52m
+      return Math.round(Math.max(4, Math.min(h, 320)));
+    }
+
+    function prepareBuildings(geojson, needGcj) {
+      const out = [];
+      const feats = (geojson && geojson.features) || [];
+      for (let i = 0; i < feats.length; i++) {
+        const f = feats[i];
+        if (!f || !f.geometry) continue;
+        const g = f.geometry;
+        if (g.type !== 'Polygon' && g.type !== 'MultiPolygon') continue;
+        let polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+        /* 结构层级：Polygon -> [g.coordinates] = 环数组；MultiPolygon -> 多边形数组。
+         * 统一成 polys[多边形序号][环序号][点序号] = [lng, lat]，
+         * 因此"至少 4 个点（含闭合点）"要检查的是外环 polys[0][0]，不是 polys[0]。 */
+        const outerRing = polys[0] && polys[0][0];
+        if (!polys.length || !outerRing || outerRing.length < 4) continue;
+        if (needGcj) {
+          polys = polys.map(poly => poly.map(ring => ring.map(p => {
+            const q = wgs84ToGcj02(p[0], p[1]); return [q[0], q[1]];
+          })));
+        }
+        const seed = polys[0][0][0];   // 外环首点，用作稳定伪随机高度的种子
+        const props = Object.assign({}, f.properties || {});
+        props._h = resolveHeight(props, seed[0], seed[1]);
+        /* 内部统一成 polys[多边形][环][点] 便于纠偏，输出时必须还原成各自的规范结构：
+         * Polygon 的 coordinates 是「环数组」，MultiPolygon 才是「多边形数组」。
+         * 少这一层还原，Polygon 会被写成 MultiPolygon 的形状，Loca 解析不到有效面，楼块整批不显示。 */
+        const outCoords = (g.type === 'Polygon') ? polys[0] : polys;
+        out.push({ type: 'Feature', properties: props, geometry: { type: g.type, coordinates: outCoords } });
+        if (out.length >= BUILDING_CFG.maxFeatures) break;
+      }
+      return { type: 'FeatureCollection', features: out };
+    }
+
+    /* ---------- 示例楼块：以当前地图中心为原点程序化生成街区，离线也能看到 3D 效果 ---------- */
+    function buildDemoBuildings(center) {
+      const feats = [];
+      const rnd = mulberry32(Math.round(center[0] * 1000) * 7919 + Math.round(center[1] * 1000));
+      const mLat = 111320, mLng = 111320 * Math.cos(center[1] * Math.PI / 180);
+      const BLOCK = 88, ROAD = 26, N = 7;              // 7×7 街区，楼块 88m，路宽 26m
+      const span = N * (BLOCK + ROAD);
+      for (let gx = 0; gx < N; gx++) {
+        for (let gy = 0; gy < N; gy++) {
+          const bx = -span / 2 + gx * (BLOCK + ROAD), by = -span / 2 + gy * (BLOCK + ROAD);
+          const per = 1 + Math.floor(rnd() * 3);       // 每街区 1~3 栋
+          const cellW = BLOCK / per;
+          for (let k = 0; k < per; k++) {
+            const w = cellW * (0.58 + rnd() * 0.3), d = BLOCK * (0.45 + rnd() * 0.42);
+            const ox = bx + k * cellW + (cellW - w) / 2, oy = by + (BLOCK - d) / 2;
+            const h = 12 + Math.pow(rnd(), 1.7) * 96;  // 多数中低层，少量高层
+            feats.push({
+              type: 'Feature',
+              properties: { name: '示例楼块', _h: Math.round(h), _demo: true },
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                  [center[0] + ox / mLng, center[1] + oy / mLat],
+                  [center[0] + (ox + w) / mLng, center[1] + oy / mLat],
+                  [center[0] + (ox + w) / mLng, center[1] + (oy + d) / mLat],
+                  [center[0] + ox / mLng, center[1] + (oy + d) / mLat],
+                  [center[0] + ox / mLng, center[1] + oy / mLat]
+                ]]
+              }
+            });
+          }
+        }
+      }
+      return { type: 'FeatureCollection', features: feats };
+    }
+
+    /* ---------- Overpass(OSM) -> GeoJSON ---------- */
+    function overpassToGeoJSON(data) {
+      const feats = [];
+      const els = (data && data.elements) || [];
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        if (!el.geometry || el.geometry.length < 3) continue;
+        const ring = el.geometry.map(p => [p.lon, p.lat]);
+        const a = ring[0], b = ring[ring.length - 1];
+        if (a[0] !== b[0] || a[1] !== b[1]) ring.push([a[0], a[1]]);   // GeoJSON 要求闭环
+        feats.push({
+          type: 'Feature',
+          properties: Object.assign({}, el.tags || {}, { _osmId: el.id }),
+          geometry: { type: 'Polygon', coordinates: [ring] }
+        });
+        if (feats.length >= BUILDING_CFG.maxFeatures) break;
+      }
+      return { type: 'FeatureCollection', features: feats };
+    }
+
+    async function fetchWithTimeout(url, options, ms) {
+      const ctrl = ('AbortController' in window) ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+      try {
+        return await fetch(url, ctrl ? Object.assign({}, options, { signal: ctrl.signal }) : options);
+      } finally { if (timer) clearTimeout(timer); }
+    }
+
+    async function fetchOsmBuildings(bbox) {
+      const q = '[out:json][timeout:12];(way["building"](' + bbox + ');relation["building"](' + bbox + '););out geom tags ' + BUILDING_CFG.maxFeatures + ';';
+      const body = 'data=' + encodeURIComponent(q);
+      for (let i = 0; i < BUILDING_CFG.overpass.length; i++) {
+        const ep = BUILDING_CFG.overpass[i];
+        try {
+          const r = await fetchWithTimeout(ep, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: body
+          }, BUILDING_CFG.fetchTimeout);
+          if (!r.ok) continue;
+          const gj = overpassToGeoJSON(await r.json());
+          if (gj.features.length > 0) return gj;
+        } catch (e) { /* 换下一个端点 */ }
+      }
+      return null;
+    }
+
+    function currentBBox() {
+      const b = map.getBounds();
+      const sw = b.getSouthWest(), ne = b.getNorthEast();
+      const dLat = (ne.getLat() - sw.getLat()) * 0.1, dLng = (ne.getLng() - sw.getLng()) * 0.1;
+      // Overpass 顺序：south,west,north,east
+      return [sw.getLat() - dLat, sw.getLng() - dLng, ne.getLat() + dLat, ne.getLng() + dLng]
+        .map(v => v.toFixed(5)).join(',');
+    }
+
+    /* ---------- Loca 初始化 ---------- */
+    function initBuildings() {
+      if (!LocaOK) {
+        Buildings.warnOnce = true;
+        setBuildingStatus('Loca 库未加载成功，已退回底图自带楼块', true);
+        console.warn('[楼块] Loca 未加载：检查 https://webapi.amap.com/loca?v=2.0.0&key=... 是否被拦截');
+        return;
+      }
+      try {
+        Buildings.loca = new Loca.Container({ map: map });
+        // 光照：环境光决定整体亮度，平行光决定侧面明暗，两者缺一楼块会显得"平"
+        Buildings.loca.addLight(new Loca.AmbientLight({ intensity: 0.55, color: '#ffffff' }));
+        Buildings.loca.addLight(new Loca.DirectionalLight({
+          intensity: 0.7, color: '#fff4dd', target: [0, 0, 0], position: [0.5, -1, 1]
+        }));
+        Buildings.layer = new Loca.PolygonLayer({
+          loca: Buildings.loca,
+          zIndex: 120,
+          opacity: 1,
+          visible: true,
+          zooms: [13, 22],
+          cullface: 'back',
+          acceptLight: true,
+          shininess: 65,
+          hasSide: true,
+          hasBottom: false,
+          depth: true
+        });
+        Buildings.loca.animate.start();   // 不启动帧控制器，生长动画不会播放
+        Buildings.ready = true;
+        setBuildingStatus('Loca 就绪，等待视野放大到 ' + BUILDING_CFG.minZoom + ' 级');
+      } catch (err) {
+        Buildings.ready = false;
+        console.error('[楼块] Loca 初始化失败', err);
+        setBuildingStatus('Loca 初始化失败：' + err.message, true);
+      }
+    }
+
+    function applyBuildingStyle() {
+      Buildings.layer.setStyle({
+        altitude: 0,
+        height: function (index, feature) { return (feature && feature.properties && feature.properties._h) || 12; },
+        topColor: function (index, feature) { return topColorFor((feature.properties || {})._h || 12); },
+        sideTopColor: function (index, feature) { return sideTopFor((feature.properties || {})._h || 12); },
+        sideBottomColor: SIDE_BOTTOM,
+        bottomColor: SIDE_BOTTOM
+      });
+    }
+
+    function setBuildingStatus(text, isErr) {
+      if (DOM.buildingStatus) {
+        DOM.buildingStatus.textContent = text;
+        DOM.buildingStatus.classList.toggle('err', !!isErr);
+      }
+      if (DOM.buildingBadge) {
+        DOM.buildingBadge.innerHTML = (Buildings.visible && Buildings.count > 0)
+          ? ('楼块 <b>' + Buildings.count + '</b> · ' + escapeHtml(Buildings.sourceName))
+          : '';
+      }
+    }
+
+    function applyMapFeatures() {
+      // Loca 棱柱与底图自带楼块同时开会互相遮挡（z-fighting），
+      // 有 Loca 数据时关掉底图 building 要素，没有时再打开作为兜底。
+      const locaOn = Buildings.ready && Buildings.visible && Buildings.count > 0;
+      const base = (VIEW.mode3D && !locaOn) ? ['bg', 'road', 'building', 'point'] : ['bg', 'road', 'point'];
+      map.setFeatures(base);
+    }
+
+    function setBuildingsVisible(on) {
+      Buildings.visible = !!on;
+      if (Buildings.ready && Buildings.layer) {
+        try { (on ? Buildings.layer.show() : Buildings.layer.hide()); }
+        catch (e) { Buildings.layer.setLoca(on ? Buildings.loca : null); }
+      }
+      applyMapFeatures();
+      setBuildingStatus(Buildings.ready
+        ? (on ? (Buildings.count > 0 ? ('已渲染 ' + Buildings.count + ' 栋 · ' + Buildings.sourceName) : 'Loca 就绪，等待视野放大到 ' + BUILDING_CFG.minZoom + ' 级') : '楼块已关闭')
+        : 'Loca 未就绪，使用底图自带楼块', !Buildings.ready);
+    }
+
+    /* ---------- 主加载流程 ---------- */
+    async function loadBuildings(force) {
+      if (!Buildings.ready || Buildings.loading) return;
+      const z = map.getZoom();
+      if (z < BUILDING_CFG.minZoom) {
+        setBuildingStatus('当前 ' + z.toFixed(1) + ' 级，放大到 ' + BUILDING_CFG.minZoom + ' 级以上自动加载楼块');
+        return;
+      }
+      const bbox = currentBBox();
+      const c = map.getCenter();
+      const key = BUILDING_CFG.source + '|' + (BUILDING_CFG.source === 'geojson' ? BUILDING_CFG.geojsonUrl : bbox);
+      if (!force && key === Buildings.cacheKey && Buildings.count > 0) return;
+
+      Buildings.loading = true;
+      DOM.reloadBuildingBtn && (DOM.reloadBuildingBtn.disabled = true);
+      setBuildingStatus('正在加载楼块数据…');
+      let gj = null, name = '', needGcj = false;
+
+      try {
+        if (BUILDING_CFG.source === 'osm') {
+          gj = await fetchOsmBuildings(bbox);
+          name = 'OSM 真实建筑'; needGcj = true;
+          if (!gj) throw new Error('Overpass 三个端点均无响应或该区域无建筑数据');
+        } else if (BUILDING_CFG.source === 'geojson') {
+          if (!BUILDING_CFG.geojsonUrl) throw new Error('请先填写 GeoJSON 地址');
+          const r = await fetchWithTimeout(BUILDING_CFG.geojsonUrl, {}, BUILDING_CFG.fetchTimeout);
+          if (!r.ok) throw new Error('GeoJSON 请求失败 HTTP ' + r.status);
+          gj = await r.json();
+          name = '自定义 GeoJSON'; needGcj = !!BUILDING_CFG.geojsonIsWgs84;
+        } else {
+          gj = buildDemoBuildings([c.getLng(), c.getLat()]);
+          name = '示例楼块'; needGcj = false;   // 示例数据由地图中心推算，本身已是 GCJ-02
+        }
+      } catch (err) {
+        console.warn('[楼块] 主数据源失败，回落示例数据：', err);
+        gj = buildDemoBuildings([c.getLng(), c.getLat()]);
+        name = '示例楼块（回落）'; needGcj = false;
+        setBuildingStatus('原始数据源不可用（' + err.message + '），已回落为示例楼块', true);
+      }
+
+      try {
+        const prepared = prepareBuildings(gj, needGcj);
+        if (prepared.features.length === 0) {
+          Buildings.count = 0; Buildings.cacheKey = '';
+          setBuildingStatus('该视野内没有可渲染的建筑面数据', true);
+          return;
+        }
+        const src = new Loca.GeoJSONSource({ data: prepared });
+        Buildings.layer.setSource(src);
+        applyBuildingStyle();
+        // 生长动画：height 从 0 长到真实值
+        if (typeof Buildings.layer.clearAnimates === 'function') Buildings.layer.clearAnimates();
+        Buildings.layer.addAnimate({
+          key: 'height', value: [0, 1], duration: 900, transform: 260,
+          random: true, easing: 'CubicInOut', yoyo: false, repeat: 0
+        });
+        Buildings.count = prepared.features.length;
+        Buildings.cacheKey = key;
+        Buildings.sourceName = name;
+        Buildings.loadedCenter = [c.getLng(), c.getLat()];
+        applyMapFeatures();
+        setBuildingStatus('已渲染 ' + Buildings.count + ' 栋 · ' + name + (name.indexOf('示例') === 0 ? '（非真实建筑）' : ''));
+      } catch (err) {
+        console.error('[楼块] 渲染失败', err);
+        setBuildingStatus('渲染失败：' + err.message, true);
+      } finally {
+        Buildings.loading = false;
+        DOM.reloadBuildingBtn && (DOM.reloadBuildingBtn.disabled = false);
+      }
+    }
+
     function set3DMode(on, silent) {
       VIEW.mode3D = !!on;
-      // 楼块要素开关
-      map.setFeatures(VIEW.mode3D
-        ? ['bg', 'road', 'building', 'point']
-        : ['bg', 'road', 'point']);
-      // showBuildingBlock 只能通过 setMapStyle/setStatus 之外的初始化项控制，
-      // 运行期用 features 增删 'building' 即可等效开关楼块渲染。
+      // 楼块现在由 Loca 图层负责，底图 building 要素仅作兜底（见 applyMapFeatures）
+      setBuildingsVisible(VIEW.mode3D);
       if (!State.navMode) {
         const z = map.getZoom();
         const shouldTilt = VIEW.mode3D && z >= VIEW.BUILDING_MIN_ZOOM;
         map.setPitch(shouldTilt ? VIEW.BROWSE_PITCH : 0, false, 400);
         if (!shouldTilt) map.setRotation(0, false, 400);
       }
-      if (!silent) showToast(VIEW.mode3D ? '已开启 3D 楼块视图' : '已切换 2D 平面视图');
+      if (VIEW.mode3D) loadBuildings(false);
+      if (!silent) showToast(VIEW.mode3D ? '已开启 3D 楼块（Loca GeoJSON 渲染）' : '已切换 2D 平面视图');
       update3DBtn();
     }
 
@@ -431,7 +864,24 @@
       if (State.navMode || !VIEW.mode3D) return;
       const z = map.getZoom();
       map.setPitch(z >= VIEW.BUILDING_MIN_ZOOM ? VIEW.BROWSE_PITCH : 0, false, 300);
+      loadBuildings(false);          // 跨阈值/换视野后按需补载楼块
     });
+
+    /* 平移结束后节流重载楼块：视野换了，原来那批棱柱已经不在屏幕里。
+     * 导航中不走这里（导航视角每帧 setCenter 会疯狂触发），
+     * 改由 navRenderLoop 按"离开已加载中心 N 米"判断，见 reloadIfFar()。 */
+    let buildingReloadTimer = null;
+    map.on('moveend', () => {
+      if (!VIEW.mode3D || !Buildings.visible || State.navMode) return;
+      clearTimeout(buildingReloadTimer);
+      buildingReloadTimer = setTimeout(() => loadBuildings(false), 800);
+    });
+
+    function reloadIfFar(lng, lat) {
+      if (!Buildings.loadedCenter || !Buildings.visible) return false;
+      const d = AMap.GeometryUtil.distance(Buildings.loadedCenter, [lng, lat]);
+      return d > BUILDING_CFG.reloadDistance;
+    }
 
 
     // 【修复】原代码 new 了一个 drivingBase 却从未使用（死代码），
@@ -877,6 +1327,7 @@
       el.addEventListener('blur', () => setTimeout(() => removeSuggestionPanel(el), 200));
     });
 
+
     // ==========================================
     // 8. 第一人称导航核心逻辑 (视角前移与路线高亮)
     // ==========================================
@@ -885,15 +1336,39 @@
     let locMarker = null, locCircle = null;
     let currentHeading = 0;
 
-    const NAVI_ICON_SIZE = 40;
+    /* 【重做】自车标记：原来是一个 🚗 emoji，
+     * 问题有三：① emoji 各平台字形不一致，很多机型上是一辆"侧面朝左"的车，
+     *   旋转后根本看不出车头朝哪；② 圆形底盘没有前后之分；③ 旋转中心不在图形几何中心。
+     * 现在换成高德 App 同款的「导航箭头」内联 SVG：
+     *   · 尖头朝上、尾部带内凹缺口 —— 前后指向唯一确定，一眼可辨
+     *   · 白色描边 + 白色底盘 + 投影 —— 在任何底图/楼块配色上都不会糊掉
+     *   · 外圈呼吸光环表示定位活跃
+     *   · 只有 rot 这一层做 transform 旋转，尖头在 SVG 内部恒定朝上，
+     *     因此 rotate(0) == 指向屏幕正上方 == 车头向上，语义清晰不会算错。 */
+    const NAVI_ICON_SIZE = 46;
     function buildNaviIcon() {
       const wrap = document.createElement('div');
-      wrap.style.cssText = `width:${NAVI_ICON_SIZE}px;height:${NAVI_ICON_SIZE}px;background:#4f46e5;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 10px rgba(79,70,229,0.6);display:flex;align-items:center;justify-content:center;`;
-      const inner = document.createElement('div');
-      inner.style.cssText = 'font-size:20px;line-height:1;transition:transform .2s linear;';
-      inner.textContent = '🚗';
-      wrap.appendChild(inner);
-      return { wrap, inner };
+      wrap.style.cssText = 'position:relative;width:' + NAVI_ICON_SIZE + 'px;height:' + NAVI_ICON_SIZE + 'px;';
+
+      const halo = document.createElement('div');
+      halo.style.cssText = 'position:absolute;left:3px;top:3px;right:3px;bottom:3px;border-radius:50%;background:rgba(37,99,235,0.22);animation:pulse-ring 2s infinite;';
+
+      const plate = document.createElement('div');
+      plate.style.cssText = 'position:absolute;left:8px;top:8px;right:8px;bottom:8px;border-radius:50%;background:#fff;box-shadow:0 3px 12px rgba(15,23,42,0.38);';
+
+      const rot = document.createElement('div');
+      rot.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:50% 50%;will-change:transform;';
+      rot.innerHTML =
+        '<svg width="' + NAVI_ICON_SIZE + '" height="' + NAVI_ICON_SIZE + '" viewBox="0 0 46 46" xmlns="http://www.w3.org/2000/svg">' +
+          '<defs><linearGradient id="navArrowGrad" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#1d4ed8"/>' +
+          '</linearGradient></defs>' +
+          // 尖头(23,5) → 右尾(38,38) → 内凹(23,31) → 左尾(8,38) → 闭合：前窄后宽 + 尾凹，指向无歧义
+          '<path d="M23 5 L38 38 L23 31 L8 38 Z" fill="url(#navArrowGrad)" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>' +
+        '</svg>';
+
+      wrap.appendChild(halo); wrap.appendChild(plate); wrap.appendChild(rot);
+      return { wrap: wrap, inner: rot };
     }
 
     function setNaviHeading(heading) {
@@ -901,7 +1376,8 @@
       /* 【修复】原实现每收到一个定位点就 setContent 重建整棵 DOM（还顺带读了一次 getContent），
        * 高频点位下会明显闪烁并产生 GC 压力。改为只更新内层节点的 transform。
        * 角度经 carIconAngle() 换算：车头向上模式下要抵消地图自身的旋转。 */
-      if (naviMarkerEl) naviMarkerEl.style.transform = `rotate(${carIconAngle(currentHeading)}deg)`;
+      navLastIconAngle = -999;         // 强制下一次写入，避免被判为"角度没变"而跳过
+      applyIconAngle(currentHeading);
     }
 
     /* 【新增】导航视角渲染循环
@@ -910,28 +1386,50 @@
     let navRafId = null;
     let navLastCenter = null;
     let navLastAppliedHeading = -999;
-    function navRenderLoop() {
-      if (!State.navMode) { navRafId = null; return; }
+    let navLastFrameTs = 0;
+    let navLastReloadCheck = 0;
+
+    function navRenderLoop(ts) {
+      if (!State.navMode) { navRafId = null; navLastFrameTs = 0; return; }
+
+      const now = ts || performance.now();
+      const dt = navLastFrameTs ? Math.min(250, Math.max(1, now - navLastFrameTs)) : 16;
+      navLastFrameTs = now;
+
+      /* 【关键修复】原来罗盘读数只写进 Heading.compass，融合(lerp)只发生在 GPS 回调里，
+       * 于是"站着转身 / 等红灯 / 信号不更新"时地图和箭头都不动，
+       * 号称的"罗盘 30~60Hz 高频跟随"根本没生效。
+       * 现在每帧都做一次融合（gpsHeading 传 null，内部会用最近一次 Heading.gps），
+       * 罗盘才能真正驱动视角。dt 参与平滑，帧率高也不会转得过冲。 */
+      updateHeading(null, Heading.speed, dt);
+
+      // 箭头：无论用户是否在手动操作地图，都要指向真实航向（公式已含 map.getRotation()）
+      applyIconAngle(Heading.value);
 
       const manual = Date.now() < State.navManualUntil;   // 用户手动操作期间不抢视角
       if (!manual && State.currentPos) {
         // 角度变化小于 0.3° 时不重设，避免每帧都触发底图重绘
         if (Math.abs(((Heading.value - navLastAppliedHeading + 540) % 360) - 180) > 0.3) {
           applyMapHeading(Heading.value);
-          if (naviMarkerEl) naviMarkerEl.style.transform = `rotate(${carIconAngle(Heading.value)}deg)`;
           navLastAppliedHeading = Heading.value;
+          applyIconAngle(Heading.value);   // 地图刚转完，箭头补偿角同步刷新
         }
 
-        /* 中心点只在「真的动了」时才更新：静止不动时只转视角，
-         * 每帧都 setCenter 会白白吃 CPU 并让底图反复重绘。
-         * 车头向上模式下，中心点始终取"车前方 120 米"，
-         * 于是无论朝向怎么变，小车都稳定停在屏幕中心偏下、前方路况可见。 */
+        /* 中心点只在「真的动了」时才更新，且必须传 immediately=true：
+         * setCenter 默认带动画，rAF 每帧发起一个动画会互相打断，画面表现为持续抖动。 */
         const ahead = getMapCenterAhead(State.currentPos.lng, State.currentPos.lat, Heading.value, 120);
         const moved = !navLastCenter
           || Math.abs(ahead[0] - navLastCenter[0]) > 1e-6
           || Math.abs(ahead[1] - navLastCenter[1]) > 1e-6;
-        if (moved) { map.setCenter(ahead); navLastCenter = ahead; }
+        if (moved) { map.setCenter(ahead, true); navLastCenter = ahead; }
       }
+
+      // 导航中每 5 秒检查一次是否已驶出楼块加载范围，是则补载（不依赖 moveend）
+      if (State.currentPos && now - navLastReloadCheck > 5000) {
+        navLastReloadCheck = now;
+        if (VIEW.mode3D && reloadIfFar(State.currentPos.lng, State.currentPos.lat)) loadBuildings(true);
+      }
+
       navRafId = requestAnimationFrame(navRenderLoop);
     }
 
@@ -1049,24 +1547,27 @@
       return (from + diff * t + 360) % 360;
     }
 
-    /* 融合并平滑：GPS 有速度时优先 GPS，否则用罗盘 */
-    function updateHeading(gpsHeading, speed) {
+    /* 融合并平滑：移动中优先 GPS（更准、不受车体磁干扰），静止/低速用罗盘。
+     * dtMs：由 rAF 传入的帧间隔，用于做「与帧率无关」的指数平滑；
+     *       不传时（GPS 回调直接调）退回固定系数 0.35。 */
+    function updateHeading(gpsHeading, speed, dtMs) {
       if (typeof speed === 'number' && !isNaN(speed)) Heading.speed = speed;
+      if (gpsHeading != null && !isNaN(gpsHeading)) Heading.gps = ((gpsHeading % 360) + 360) % 360;
 
       let target = null;
       const moving = Heading.speed > 1.5;   // ~5.4 km/h 以上认为在移动
-      if (moving && gpsHeading != null && !isNaN(gpsHeading)) {
-        target = gpsHeading;
-        Heading.gps = gpsHeading;
+      if (moving && Heading.gps != null) {
+        target = Heading.gps;
       } else if (Heading.compass != null) {
         target = Heading.compass;
-      } else if (gpsHeading != null && !isNaN(gpsHeading)) {
-        target = gpsHeading;   // 罗盘不可用时退回 GPS
+      } else if (Heading.gps != null) {
+        target = Heading.gps;   // 罗盘不可用时退回 GPS
         Heading.useCompass = false;
       }
       if (target == null) return Heading.value;
 
-      Heading.value = lerpAngle(Heading.value, (target + 360) % 360, 0.35);
+      const t = (dtMs > 0) ? (1 - Math.exp(-dtMs / 160)) : 0.35;
+      Heading.value = lerpAngle(Heading.value, (target + 360) % 360, t);
       return Heading.value;
     }
 
@@ -1079,14 +1580,41 @@
       map.setRotation((360 - h) % 360);          // 逆时针 h 度 == 顺时针 (360-h) 度
     }
 
-    /* DOM 标记是否随地图一起旋转：高德 2.0 中自定义 DOM 标记位于会被 rotation 变换的
-     * 覆盖物层，因此会跟着地图转。车头向上模式下需要反向补偿 heading，
-     * 小车才会稳定指向屏幕正上方。若你在真机上发现车头方向反了，
-     * 把这个常量改成 false 即可（这是唯一的开关点）。 */
-    const MARKER_ROTATES_WITH_MAP = true;
+    /* 【重写】箭头屏幕角度的计算方式。
+     *
+     * 高德 2.0 里自定义 DOM 内容的 Marker 是「屏幕对齐」的：地图 rotation 变化时
+     * 标记本身不跟着转（和文字标注保持水平是同一套机制）。所以要让箭头指对方向，
+     * 必须自己把地图的旋转量加回来：
+     *
+     *     屏幕角度 = 真实航向 + map.getRotation()
+     *
+     * 验证两种模式：
+     *   · 导航中 applyMapHeading 设 rotation = 360 - heading
+     *     → 屏幕角度 = heading + 360 - heading = 0（箭头恒定朝屏幕正上方，即车头向上）
+     *   · 北向上浏览 rotation = 0
+     *     → 屏幕角度 = heading（箭头指向真实方位）
+     *   · 导航中用户手动转图（5 秒自由操作窗口内）
+     *     → 公式自动跟着当前 rotation 走，箭头依然指向真实前进方向，不会错位
+     *
+     * 原来那个 MARKER_ROTATES_WITH_MAP 布尔开关是"猜一个方向、真机不对再改"，
+     * 而且非导航/手动转图两种情况都会算错；换成上式后不再需要猜。
+     * 若你在某个特殊版本上确认标记确实随地图旋转，把下面常量改成 false 即可退回旧口径。 */
+    const MARKER_SCREEN_ALIGNED = true;
     function carIconAngle(heading) {
-      if (!State.navMode) return heading;                    // 非导航：显示绝对航向
-      return MARKER_ROTATES_WITH_MAP ? heading : 0;          // 导航(车头向上)：补偿后指向正上
+      const h = ((heading % 360) + 360) % 360;
+      if (!MARKER_SCREEN_ALIGNED) return h;
+      const r = (typeof map.getRotation === 'function' ? (map.getRotation() || 0) : 0);
+      return ((h + r) % 360 + 360) % 360;
+    }
+
+    /* 每帧只在角度真的变化时才写 transform，避免无谓的重排 */
+    let navLastIconAngle = -999;
+    function applyIconAngle(heading) {
+      if (!naviMarkerEl) return;
+      const a = carIconAngle(heading);
+      if (Math.abs(((a - navLastIconAngle + 540) % 360) - 180) < 0.2) return;
+      naviMarkerEl.style.transform = 'rotate(' + a.toFixed(2) + 'deg)';
+      navLastIconAngle = a;
     }
 
 
@@ -1371,8 +1899,43 @@
       });
     });
 
-    // 初始按当前档位应用一次 3D 设置（默认开启楼块）
+    // 初始化 Loca 楼块图层，再按当前档位应用一次 3D 设置（默认开启楼块）
+    initBuildings();
     set3DMode(true, true);
+
+    /* ---------- 楼块数据源设置卡 ---------- */
+    function syncBuildingForm() {
+      const isGeo = BUILDING_CFG.source === 'geojson';
+      DOM.geojsonUrlInput.disabled = !isGeo;
+      DOM.geojsonWgs84Chk.disabled = !isGeo;
+      DOM.geojsonUrlInput.value = BUILDING_CFG.geojsonUrl;
+      DOM.geojsonWgs84Chk.checked = BUILDING_CFG.geojsonIsWgs84;
+      document.querySelectorAll('input[name="bSrc"]').forEach(r => { r.checked = (r.value === BUILDING_CFG.source); });
+    }
+
+    DOM.buildingSetBtn.addEventListener('click', () => {
+      if (State.isPicking) exitPickMode();
+      syncBuildingForm();
+      DOM.buildingCard.classList.toggle('show');
+    });
+    DOM.closeBuildingCardBtn.addEventListener('click', () => DOM.buildingCard.classList.remove('show'));
+
+    document.querySelectorAll('input[name="bSrc"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        BUILDING_CFG.source = radio.value;
+        syncBuildingForm();
+      });
+    });
+
+    DOM.reloadBuildingBtn.addEventListener('click', () => {
+      BUILDING_CFG.geojsonUrl = DOM.geojsonUrlInput.value.trim();
+      BUILDING_CFG.geojsonIsWgs84 = DOM.geojsonWgs84Chk.checked;
+      Buildings.cacheKey = '';                     // 强制重新抓取，不吃缓存
+      if (!VIEW.mode3D) set3DMode(true, true);     // 关着的话顺手打开
+      loadBuildings(true);
+      showToast('已按新数据源重载楼块');
+    });
+
 
     // ==========================================
     // 9. 其他基础控制
